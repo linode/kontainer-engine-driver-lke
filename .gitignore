@@ -4,3 +4,5 @@
 *.swp
 /.trash-cache
 /trash.lock
+/.idea
+/kontainer-engine-driver-linode

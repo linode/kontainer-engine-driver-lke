@@ -2,14 +2,17 @@ package v3
 
 import (
 	"context"
+	"time"
 
 	"github.com/rancher/norman/controller"
 	"github.com/rancher/norman/objectclient"
+	"github.com/rancher/norman/resource"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 )
@@ -26,12 +29,29 @@ var (
 		Namespaced:   false,
 		Kind:         LdapConfigGroupVersionKind.Kind,
 	}
+
+	LdapConfigGroupVersionResource = schema.GroupVersionResource{
+		Group:    GroupName,
+		Version:  Version,
+		Resource: "ldapconfigs",
+	}
 )
+
+func init() {
+	resource.Put(LdapConfigGroupVersionResource)
+}
+
+func NewLdapConfig(namespace, name string, obj LdapConfig) *LdapConfig {
+	obj.APIVersion, obj.Kind = LdapConfigGroupVersionKind.ToAPIVersionAndKind()
+	obj.Name = name
+	obj.Namespace = namespace
+	return &obj
+}
 
 type LdapConfigList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []LdapConfig
+	Items           []LdapConfig `json:"items"`
 }
 
 type LdapConfigHandlerFunc func(key string, obj *LdapConfig) (runtime.Object, error)
@@ -48,8 +68,11 @@ type LdapConfigController interface {
 	Informer() cache.SharedIndexInformer
 	Lister() LdapConfigLister
 	AddHandler(ctx context.Context, name string, handler LdapConfigHandlerFunc)
+	AddFeatureHandler(ctx context.Context, enabled func() bool, name string, sync LdapConfigHandlerFunc)
 	AddClusterScopedHandler(ctx context.Context, name, clusterName string, handler LdapConfigHandlerFunc)
+	AddClusterScopedFeatureHandler(ctx context.Context, enabled func() bool, name, clusterName string, handler LdapConfigHandlerFunc)
 	Enqueue(namespace, name string)
+	EnqueueAfter(namespace, name string, after time.Duration)
 	Sync(ctx context.Context) error
 	Start(ctx context.Context, threadiness int) error
 }
@@ -63,13 +86,18 @@ type LdapConfigInterface interface {
 	Delete(name string, options *metav1.DeleteOptions) error
 	DeleteNamespaced(namespace, name string, options *metav1.DeleteOptions) error
 	List(opts metav1.ListOptions) (*LdapConfigList, error)
+	ListNamespaced(namespace string, opts metav1.ListOptions) (*LdapConfigList, error)
 	Watch(opts metav1.ListOptions) (watch.Interface, error)
 	DeleteCollection(deleteOpts *metav1.DeleteOptions, listOpts metav1.ListOptions) error
 	Controller() LdapConfigController
 	AddHandler(ctx context.Context, name string, sync LdapConfigHandlerFunc)
+	AddFeatureHandler(ctx context.Context, enabled func() bool, name string, sync LdapConfigHandlerFunc)
 	AddLifecycle(ctx context.Context, name string, lifecycle LdapConfigLifecycle)
+	AddFeatureLifecycle(ctx context.Context, enabled func() bool, name string, lifecycle LdapConfigLifecycle)
 	AddClusterScopedHandler(ctx context.Context, name, clusterName string, sync LdapConfigHandlerFunc)
+	AddClusterScopedFeatureHandler(ctx context.Context, enabled func() bool, name, clusterName string, sync LdapConfigHandlerFunc)
 	AddClusterScopedLifecycle(ctx context.Context, name, clusterName string, lifecycle LdapConfigLifecycle)
+	AddClusterScopedFeatureLifecycle(ctx context.Context, enabled func() bool, name, clusterName string, lifecycle LdapConfigLifecycle)
 }
 
 type ldapConfigLister struct {
@@ -129,9 +157,37 @@ func (c *ldapConfigController) AddHandler(ctx context.Context, name string, hand
 	})
 }
 
+func (c *ldapConfigController) AddFeatureHandler(ctx context.Context, enabled func() bool, name string, handler LdapConfigHandlerFunc) {
+	c.GenericController.AddHandler(ctx, name, func(key string, obj interface{}) (interface{}, error) {
+		if !enabled() {
+			return nil, nil
+		} else if obj == nil {
+			return handler(key, nil)
+		} else if v, ok := obj.(*LdapConfig); ok {
+			return handler(key, v)
+		} else {
+			return nil, nil
+		}
+	})
+}
+
 func (c *ldapConfigController) AddClusterScopedHandler(ctx context.Context, name, cluster string, handler LdapConfigHandlerFunc) {
 	c.GenericController.AddHandler(ctx, name, func(key string, obj interface{}) (interface{}, error) {
 		if obj == nil {
+			return handler(key, nil)
+		} else if v, ok := obj.(*LdapConfig); ok && controller.ObjectInCluster(cluster, obj) {
+			return handler(key, v)
+		} else {
+			return nil, nil
+		}
+	})
+}
+
+func (c *ldapConfigController) AddClusterScopedFeatureHandler(ctx context.Context, enabled func() bool, name, cluster string, handler LdapConfigHandlerFunc) {
+	c.GenericController.AddHandler(ctx, name, func(key string, obj interface{}) (interface{}, error) {
+		if !enabled() {
+			return nil, nil
+		} else if obj == nil {
 			return handler(key, nil)
 		} else if v, ok := obj.(*LdapConfig); ok && controller.ObjectInCluster(cluster, obj) {
 			return handler(key, v)
@@ -218,13 +274,18 @@ func (s *ldapConfigClient) List(opts metav1.ListOptions) (*LdapConfigList, error
 	return obj.(*LdapConfigList), err
 }
 
+func (s *ldapConfigClient) ListNamespaced(namespace string, opts metav1.ListOptions) (*LdapConfigList, error) {
+	obj, err := s.objectClient.ListNamespaced(namespace, opts)
+	return obj.(*LdapConfigList), err
+}
+
 func (s *ldapConfigClient) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 	return s.objectClient.Watch(opts)
 }
 
 // Patch applies the patch and returns the patched deployment.
-func (s *ldapConfigClient) Patch(o *LdapConfig, data []byte, subresources ...string) (*LdapConfig, error) {
-	obj, err := s.objectClient.Patch(o.Name, o, data, subresources...)
+func (s *ldapConfigClient) Patch(o *LdapConfig, patchType types.PatchType, data []byte, subresources ...string) (*LdapConfig, error) {
+	obj, err := s.objectClient.Patch(o.Name, o, patchType, data, subresources...)
 	return obj.(*LdapConfig), err
 }
 
@@ -236,13 +297,26 @@ func (s *ldapConfigClient) AddHandler(ctx context.Context, name string, sync Lda
 	s.Controller().AddHandler(ctx, name, sync)
 }
 
+func (s *ldapConfigClient) AddFeatureHandler(ctx context.Context, enabled func() bool, name string, sync LdapConfigHandlerFunc) {
+	s.Controller().AddFeatureHandler(ctx, enabled, name, sync)
+}
+
 func (s *ldapConfigClient) AddLifecycle(ctx context.Context, name string, lifecycle LdapConfigLifecycle) {
 	sync := NewLdapConfigLifecycleAdapter(name, false, s, lifecycle)
 	s.Controller().AddHandler(ctx, name, sync)
 }
 
+func (s *ldapConfigClient) AddFeatureLifecycle(ctx context.Context, enabled func() bool, name string, lifecycle LdapConfigLifecycle) {
+	sync := NewLdapConfigLifecycleAdapter(name, false, s, lifecycle)
+	s.Controller().AddFeatureHandler(ctx, enabled, name, sync)
+}
+
 func (s *ldapConfigClient) AddClusterScopedHandler(ctx context.Context, name, clusterName string, sync LdapConfigHandlerFunc) {
 	s.Controller().AddClusterScopedHandler(ctx, name, clusterName, sync)
+}
+
+func (s *ldapConfigClient) AddClusterScopedFeatureHandler(ctx context.Context, enabled func() bool, name, clusterName string, sync LdapConfigHandlerFunc) {
+	s.Controller().AddClusterScopedFeatureHandler(ctx, enabled, name, clusterName, sync)
 }
 
 func (s *ldapConfigClient) AddClusterScopedLifecycle(ctx context.Context, name, clusterName string, lifecycle LdapConfigLifecycle) {
@@ -250,177 +324,7 @@ func (s *ldapConfigClient) AddClusterScopedLifecycle(ctx context.Context, name, 
 	s.Controller().AddClusterScopedHandler(ctx, name, clusterName, sync)
 }
 
-type LdapConfigIndexer func(obj *LdapConfig) ([]string, error)
-
-type LdapConfigClientCache interface {
-	Get(namespace, name string) (*LdapConfig, error)
-	List(namespace string, selector labels.Selector) ([]*LdapConfig, error)
-
-	Index(name string, indexer LdapConfigIndexer)
-	GetIndexed(name, key string) ([]*LdapConfig, error)
-}
-
-type LdapConfigClient interface {
-	Create(*LdapConfig) (*LdapConfig, error)
-	Get(namespace, name string, opts metav1.GetOptions) (*LdapConfig, error)
-	Update(*LdapConfig) (*LdapConfig, error)
-	Delete(namespace, name string, options *metav1.DeleteOptions) error
-	List(namespace string, opts metav1.ListOptions) (*LdapConfigList, error)
-	Watch(opts metav1.ListOptions) (watch.Interface, error)
-
-	Cache() LdapConfigClientCache
-
-	OnCreate(ctx context.Context, name string, sync LdapConfigChangeHandlerFunc)
-	OnChange(ctx context.Context, name string, sync LdapConfigChangeHandlerFunc)
-	OnRemove(ctx context.Context, name string, sync LdapConfigChangeHandlerFunc)
-	Enqueue(namespace, name string)
-
-	Generic() controller.GenericController
-	Interface() LdapConfigInterface
-}
-
-type ldapConfigClientCache struct {
-	client *ldapConfigClient2
-}
-
-type ldapConfigClient2 struct {
-	iface      LdapConfigInterface
-	controller LdapConfigController
-}
-
-func (n *ldapConfigClient2) Interface() LdapConfigInterface {
-	return n.iface
-}
-
-func (n *ldapConfigClient2) Generic() controller.GenericController {
-	return n.iface.Controller().Generic()
-}
-
-func (n *ldapConfigClient2) Enqueue(namespace, name string) {
-	n.iface.Controller().Enqueue(namespace, name)
-}
-
-func (n *ldapConfigClient2) Create(obj *LdapConfig) (*LdapConfig, error) {
-	return n.iface.Create(obj)
-}
-
-func (n *ldapConfigClient2) Get(namespace, name string, opts metav1.GetOptions) (*LdapConfig, error) {
-	return n.iface.GetNamespaced(namespace, name, opts)
-}
-
-func (n *ldapConfigClient2) Update(obj *LdapConfig) (*LdapConfig, error) {
-	return n.iface.Update(obj)
-}
-
-func (n *ldapConfigClient2) Delete(namespace, name string, options *metav1.DeleteOptions) error {
-	return n.iface.DeleteNamespaced(namespace, name, options)
-}
-
-func (n *ldapConfigClient2) List(namespace string, opts metav1.ListOptions) (*LdapConfigList, error) {
-	return n.iface.List(opts)
-}
-
-func (n *ldapConfigClient2) Watch(opts metav1.ListOptions) (watch.Interface, error) {
-	return n.iface.Watch(opts)
-}
-
-func (n *ldapConfigClientCache) Get(namespace, name string) (*LdapConfig, error) {
-	return n.client.controller.Lister().Get(namespace, name)
-}
-
-func (n *ldapConfigClientCache) List(namespace string, selector labels.Selector) ([]*LdapConfig, error) {
-	return n.client.controller.Lister().List(namespace, selector)
-}
-
-func (n *ldapConfigClient2) Cache() LdapConfigClientCache {
-	n.loadController()
-	return &ldapConfigClientCache{
-		client: n,
-	}
-}
-
-func (n *ldapConfigClient2) OnCreate(ctx context.Context, name string, sync LdapConfigChangeHandlerFunc) {
-	n.loadController()
-	n.iface.AddLifecycle(ctx, name+"-create", &ldapConfigLifecycleDelegate{create: sync})
-}
-
-func (n *ldapConfigClient2) OnChange(ctx context.Context, name string, sync LdapConfigChangeHandlerFunc) {
-	n.loadController()
-	n.iface.AddLifecycle(ctx, name+"-change", &ldapConfigLifecycleDelegate{update: sync})
-}
-
-func (n *ldapConfigClient2) OnRemove(ctx context.Context, name string, sync LdapConfigChangeHandlerFunc) {
-	n.loadController()
-	n.iface.AddLifecycle(ctx, name, &ldapConfigLifecycleDelegate{remove: sync})
-}
-
-func (n *ldapConfigClientCache) Index(name string, indexer LdapConfigIndexer) {
-	err := n.client.controller.Informer().GetIndexer().AddIndexers(map[string]cache.IndexFunc{
-		name: func(obj interface{}) ([]string, error) {
-			if v, ok := obj.(*LdapConfig); ok {
-				return indexer(v)
-			}
-			return nil, nil
-		},
-	})
-
-	if err != nil {
-		panic(err)
-	}
-}
-
-func (n *ldapConfigClientCache) GetIndexed(name, key string) ([]*LdapConfig, error) {
-	var result []*LdapConfig
-	objs, err := n.client.controller.Informer().GetIndexer().ByIndex(name, key)
-	if err != nil {
-		return nil, err
-	}
-	for _, obj := range objs {
-		if v, ok := obj.(*LdapConfig); ok {
-			result = append(result, v)
-		}
-	}
-
-	return result, nil
-}
-
-func (n *ldapConfigClient2) loadController() {
-	if n.controller == nil {
-		n.controller = n.iface.Controller()
-	}
-}
-
-type ldapConfigLifecycleDelegate struct {
-	create LdapConfigChangeHandlerFunc
-	update LdapConfigChangeHandlerFunc
-	remove LdapConfigChangeHandlerFunc
-}
-
-func (n *ldapConfigLifecycleDelegate) HasCreate() bool {
-	return n.create != nil
-}
-
-func (n *ldapConfigLifecycleDelegate) Create(obj *LdapConfig) (runtime.Object, error) {
-	if n.create == nil {
-		return obj, nil
-	}
-	return n.create(obj)
-}
-
-func (n *ldapConfigLifecycleDelegate) HasFinalize() bool {
-	return n.remove != nil
-}
-
-func (n *ldapConfigLifecycleDelegate) Remove(obj *LdapConfig) (runtime.Object, error) {
-	if n.remove == nil {
-		return obj, nil
-	}
-	return n.remove(obj)
-}
-
-func (n *ldapConfigLifecycleDelegate) Updated(obj *LdapConfig) (runtime.Object, error) {
-	if n.update == nil {
-		return obj, nil
-	}
-	return n.update(obj)
+func (s *ldapConfigClient) AddClusterScopedFeatureLifecycle(ctx context.Context, enabled func() bool, name, clusterName string, lifecycle LdapConfigLifecycle) {
+	sync := NewLdapConfigLifecycleAdapter(name+"_"+clusterName, true, s, lifecycle)
+	s.Controller().AddClusterScopedFeatureHandler(ctx, enabled, name, clusterName, sync)
 }

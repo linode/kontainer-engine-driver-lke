@@ -7,55 +7,55 @@ platform:
   arch: amd64
 
 steps:
-- name: build
-  pull: default
-  image: rancher/dapper:v0.4.1
-  commands:
-  - dapper ci
-  volumes:
-  - name: docker
-    path: /var/run/docker.sock
+  - name: build
+    pull: default
+    image: rancher/dapper:v0.4.1
+    commands:
+      - dapper ci
+    volumes:
+      - name: docker
+        path: /var/run/docker.sock
 
-- name: github-binary-publish-release
-  pull: default
-  image: plugins/github-release
-  settings:
-    checksum:
-    - sha256
-    files:
-    - "bin/kontainer-engine-driver-example-*"
-    api_key:
-      from_secret: github_token
-  when:
-    instance:
-    - drone-publish.rancher.io
-    event:
-    - tag
-    ref:
-      exclude:
-      - "refs/tags/*rc*"
+  - name: github-binary-publish-release
+    pull: default
+    image: plugins/github-release
+    settings:
+      checksum:
+        - sha256
+      files:
+        - "bin/kontainer-engine-driver-linode-*"
+      api_key:
+        from_secret: github_token
+    when:
+      instance:
+        - drone-publish.rancher.io
+      event:
+        - tag
+      ref:
+        exclude:
+          - "refs/tags/*rc*"
 
-- name: github-binary-publish-prerelease
-  pull: default
-  image: plugins/github-release
-  settings:
-    checksum:
-    - sha256
-    files:
-    - "bin/kontainer-engine-driver-example-*"
-    prerelease: true
-    api_key:
-      from_secret: github_token
-  when:
-    instance:
-    - drone-publish.rancher.io
-    event:
-    - tag
-    ref:
-    - refs/head/master
-    - "refs/tags/*rc*"
+  - name: github-binary-publish-prerelease
+    pull: default
+    image: plugins/github-release
+    settings:
+      checksum:
+        - sha256
+      files:
+        - "bin/kontainer-engine-driver-linode-*"
+      prerelease: true
+      api_key:
+        from_secret: github_token
+    when:
+      instance:
+        - drone-publish.rancher.io
+      event:
+        - tag
+      ref:
+        - refs/head/master
+        - "refs/tags/*rc*"
 
 volumes:
-- name: docker
-  host:
-    path: /var/run/docker.sock
+  - name: docker
+    host:
+      path: /var/run/docker.sock

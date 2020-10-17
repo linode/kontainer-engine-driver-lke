@@ -1,11 +1,13 @@
 package v3
 
 import (
+	"strings"
+
 	"github.com/pkg/errors"
 	"github.com/rancher/norman/condition"
 	"github.com/rancher/norman/types"
 	"github.com/rancher/norman/types/convert"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -24,6 +26,13 @@ type SourceCodeProvider struct {
 
 	ProjectName string `json:"projectName" norman:"type=reference[project]"`
 	Type        string `json:"type" norman:"options=github|gitlab|bitbucketcloud|bitbucketserver"`
+}
+
+func (s *SourceCodeProvider) ObjClusterName() string {
+	if parts := strings.SplitN(s.ProjectName, ":", 2); len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
 }
 
 type OauthProvider struct {
@@ -59,6 +68,13 @@ type SourceCodeProviderConfig struct {
 	ProjectName string `json:"projectName" norman:"required,type=reference[project]"`
 	Type        string `json:"type" norman:"noupdate,options=github|gitlab|bitbucketcloud|bitbucketserver"`
 	Enabled     bool   `json:"enabled,omitempty"`
+}
+
+func (s *SourceCodeProviderConfig) ObjClusterName() string {
+	if parts := strings.SplitN(s.ProjectName, ":", 2); len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
 }
 
 type GithubPipelineConfig struct {
@@ -118,6 +134,10 @@ type Pipeline struct {
 	Status PipelineStatus `json:"status"`
 }
 
+func (p *Pipeline) ObjClusterName() string {
+	return p.Spec.ObjClusterName()
+}
+
 type PipelineExecution struct {
 	types.Namespaced
 
@@ -126,6 +146,10 @@ type PipelineExecution struct {
 
 	Spec   PipelineExecutionSpec   `json:"spec"`
 	Status PipelineExecutionStatus `json:"status"`
+}
+
+func (p *PipelineExecution) ObjClusterName() string {
+	return p.Spec.ObjClusterName()
 }
 
 type PipelineSetting struct {
@@ -140,6 +164,13 @@ type PipelineSetting struct {
 	Customized bool   `json:"customized" norman:"nocreate,noupdate"`
 }
 
+func (p *PipelineSetting) ObjClusterName() string {
+	if parts := strings.SplitN(p.ProjectName, ":", 2); len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
+}
+
 type SourceCodeCredential struct {
 	types.Namespaced
 
@@ -150,6 +181,10 @@ type SourceCodeCredential struct {
 	Status SourceCodeCredentialStatus `json:"status"`
 }
 
+func (s *SourceCodeCredential) ObjClusterName() string {
+	return s.Spec.ObjClusterName()
+}
+
 type SourceCodeRepository struct {
 	types.Namespaced
 
@@ -158,6 +193,10 @@ type SourceCodeRepository struct {
 
 	Spec   SourceCodeRepositorySpec   `json:"spec"`
 	Status SourceCodeRepositoryStatus `json:"status"`
+}
+
+func (s *SourceCodeRepository) ObjClusterName() string {
+	return s.Spec.ObjClusterName()
 }
 
 type PipelineStatus struct {
@@ -182,6 +221,13 @@ type PipelineSpec struct {
 
 	RepositoryURL            string `json:"repositoryUrl,omitempty" yaml:"repositoryUrl,omitempty"`
 	SourceCodeCredentialName string `json:"sourceCodeCredentialName,omitempty" yaml:"sourceCodeCredentialName,omitempty" norman:"type=reference[sourceCodeCredential],noupdate"`
+}
+
+func (p *PipelineSpec) ObjClusterName() string {
+	if parts := strings.SplitN(p.ProjectName, ":", 2); len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
 }
 
 type PipelineConfig struct {
@@ -226,15 +272,21 @@ type Stage struct {
 }
 
 type Step struct {
-	SourceCodeConfig   *SourceCodeConfig   `json:"sourceCodeConfig,omitempty" yaml:"sourceCodeConfig,omitempty"`
-	RunScriptConfig    *RunScriptConfig    `json:"runScriptConfig,omitempty" yaml:"runScriptConfig,omitempty"`
-	PublishImageConfig *PublishImageConfig `json:"publishImageConfig,omitempty" yaml:"publishImageConfig,omitempty"`
-	ApplyYamlConfig    *ApplyYamlConfig    `json:"applyYamlConfig,omitempty" yaml:"applyYamlConfig,omitempty"`
+	SourceCodeConfig     *SourceCodeConfig     `json:"sourceCodeConfig,omitempty" yaml:"sourceCodeConfig,omitempty"`
+	RunScriptConfig      *RunScriptConfig      `json:"runScriptConfig,omitempty" yaml:"runScriptConfig,omitempty"`
+	PublishImageConfig   *PublishImageConfig   `json:"publishImageConfig,omitempty" yaml:"publishImageConfig,omitempty"`
+	ApplyYamlConfig      *ApplyYamlConfig      `json:"applyYamlConfig,omitempty" yaml:"applyYamlConfig,omitempty"`
+	PublishCatalogConfig *PublishCatalogConfig `json:"publishCatalogConfig,omitempty" yaml:"publishCatalogConfig,omitempty"`
+	ApplyAppConfig       *ApplyAppConfig       `json:"applyAppConfig,omitempty" yaml:"applyAppConfig,omitempty"`
 
-	Env        map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
-	EnvFrom    []EnvFrom         `json:"envFrom,omitempty" yaml:"envFrom,omitempty"`
-	Privileged bool              `json:"privileged,omitempty" yaml:"privileged,omitempty"`
-	When       *Constraints      `json:"when,omitempty" yaml:"when,omitempty"`
+	Env           map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
+	EnvFrom       []EnvFrom         `json:"envFrom,omitempty" yaml:"envFrom,omitempty"`
+	Privileged    bool              `json:"privileged,omitempty" yaml:"privileged,omitempty"`
+	CPURequest    string            `json:"cpuRequest,omitempty" yaml:"cpuRequest,omitempty"`
+	CPULimit      string            `json:"cpuLimit,omitempty" yaml:"cpuLimit,omitempty"`
+	MemoryRequest string            `json:"memoryRequest,omitempty" yaml:"memoryRequest,omitempty"`
+	MemoryLimit   string            `json:"memoryLimit,omitempty" yaml:"memoryLimit,omitempty"`
+	When          *Constraints      `json:"when,omitempty" yaml:"when,omitempty"`
 }
 
 type Constraints struct {
@@ -269,6 +321,24 @@ type ApplyYamlConfig struct {
 	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
 }
 
+type PublishCatalogConfig struct {
+	Path            string `json:"path,omitempty" yaml:"path,omitempty"`
+	CatalogTemplate string `json:"catalogTemplate,omitempty" yaml:"catalogTemplate,omitempty"`
+	Version         string `json:"version,omitempty" yaml:"version,omitempty"`
+	GitURL          string `json:"gitUrl,omitempty" yaml:"gitUrl,omitempty"`
+	GitBranch       string `json:"gitBranch,omitempty" yaml:"gitBranch,omitempty"`
+	GitAuthor       string `json:"gitAuthor,omitempty" yaml:"gitAuthor,omitempty"`
+	GitEmail        string `json:"gitEmail,omitempty" yaml:"gitEmail,omitempty"`
+}
+
+type ApplyAppConfig struct {
+	CatalogTemplate string            `json:"catalogTemplate,omitempty" yaml:"catalogTemplate,omitempty"`
+	Version         string            `json:"version,omitempty" yaml:"version,omitempty"`
+	Answers         map[string]string `json:"answers,omitempty" yaml:"answers,omitempty"`
+	Name            string            `json:"name,omitempty" yaml:"name,omitempty"`
+	TargetNamespace string            `json:"targetNamespace,omitempty" yaml:"targetNamespace,omitempty"`
+}
+
 type PipelineExecutionSpec struct {
 	ProjectName string `json:"projectName" yaml:"projectName" norman:"required,type=reference[project]"`
 
@@ -288,6 +358,13 @@ type PipelineExecutionSpec struct {
 	Author          string         `json:"author,omitempty"`
 	AvatarURL       string         `json:"avatarUrl,omitempty"`
 	Email           string         `json:"email,omitempty"`
+}
+
+func (p *PipelineExecutionSpec) ObjClusterName() string {
+	if parts := strings.SplitN(p.ProjectName, ":", 2); len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
 }
 
 type PipelineExecutionStatus struct {
@@ -327,6 +404,13 @@ type SourceCodeCredentialSpec struct {
 	Expiry         string `json:"expiry,omitempty"`
 }
 
+func (s *SourceCodeCredentialSpec) ObjClusterName() string {
+	if parts := strings.SplitN(s.ProjectName, ":", 2); len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
+}
+
 type SourceCodeCredentialStatus struct {
 	Logout bool `json:"logout,omitempty"`
 }
@@ -340,6 +424,13 @@ type SourceCodeRepositorySpec struct {
 	Permissions              RepoPerm `json:"permissions,omitempty"`
 	Language                 string   `json:"language,omitempty"`
 	DefaultBranch            string   `json:"defaultBranch,omitempty"`
+}
+
+func (s *SourceCodeRepositorySpec) ObjClusterName() string {
+	if parts := strings.SplitN(s.ProjectName, ":", 2); len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
 }
 
 type SourceCodeRepositoryStatus struct {

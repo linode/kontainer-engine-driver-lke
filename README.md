@@ -1,7 +1,7 @@
-Kontainer Engine Example Driver
+Kontainer Engine Linode Driver
 ===============================
 
-This is the Kontainer-Engine Example Driver.  The purpose of this repo is to 
+This is the Kontainer-Engine Linode Driver.  The purpose of this repo is to
 show how to write a custom Cluster Driver for rancher.  At a minimum to write 
 a custom Cluster Driver for Rancher you will need to do the following: 
 

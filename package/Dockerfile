@@ -1,3 +1,3 @@
-FROM ubuntu:16.04
-COPY kontainer-engine-driver-example /usr/bin/
-CMD ["kontainer-engine-driver-example"]
+FROM ubuntu:18.04
+COPY kontainer-engine-driver-linode /usr/bin/
+CMD ["kontainer-engine-driver-linode"]

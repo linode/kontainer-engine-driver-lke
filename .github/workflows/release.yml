@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*.*"
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go 1.15
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.15
+        id: go
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: crazy-max/ghaction-docker-buildx@v1
+        with:
+          buildx-version: latest
+          qemu-version: latest
+
+      - name: Available platforms
+        run: echo ${{ steps.buildx.outputs.platforms }}
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v1
+
+      - name: Build
+        env:
+          REPO: tigerworks
+          DOCKER_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          USERNAME: 1gtm
+        run: |
+          docker login --username ${USERNAME} --password ${DOCKER_TOKEN}
+          make
+          docker push $(cat dist/images)
+
+      - name: Pre-release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.event.ref, 'refs/tags/') && (contains(github.ref, '-alpha.') || contains(github.ref, '-beta.') || contains(github.ref, '-rc.'))
+        with:
+          prerelease: true
+          files: |
+            bin/kontainer-engine-driver-linode-darwin-amd64
+            bin/kontainer-engine-driver-linode-linux-amd64
+            bin/kontainer-engine-driver-linode-linux-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.event.ref, 'refs/tags/') && (contains(github.ref, '-alpha.') || contains(github.ref, '-beta.') || contains(github.ref, '-rc.')) == false
+        with:
+          files: |
+            bin/kontainer-engine-driver-linode-darwin-amd64
+            bin/kontainer-engine-driver-linode-linux-amd64
+            bin/kontainer-engine-driver-linode-linux-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

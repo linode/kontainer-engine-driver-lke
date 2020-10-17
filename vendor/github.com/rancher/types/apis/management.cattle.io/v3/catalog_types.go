@@ -1,10 +1,11 @@
 package v3
 
 import (
+	"strings"
+
 	"github.com/rancher/norman/condition"
 	"github.com/rancher/norman/types"
-
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -26,6 +27,7 @@ type CatalogSpec struct {
 	CatalogKind string `json:"catalogKind,omitempty"`
 	Username    string `json:"username,omitempty"`
 	Password    string `json:"password,omitempty" norman:"type=password"`
+	HelmVersion string `json:"helmVersion,omitempty" norman:"noupdate"`
 }
 
 type CatalogStatus struct {
@@ -37,7 +39,10 @@ type CatalogStatus struct {
 }
 
 var (
-	CatalogConditionRefreshed condition.Cond = "Refreshed"
+	CatalogConditionRefreshed  condition.Cond = "Refreshed"
+	CatalogConditionUpgraded   condition.Cond = "Upgraded"
+	CatalogConditionDiskCached condition.Cond = "DiskCached"
+	CatalogConditionProcessed  condition.Cond = "Processed"
 )
 
 type CatalogCondition struct {
@@ -70,6 +75,18 @@ type Template struct {
 	Status TemplateStatus `json:"status"`
 }
 
+type CatalogTemplate struct {
+	types.Namespaced
+
+	metav1.TypeMeta `json:",inline"`
+	// Standard object’s metadata. More info:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#metadata
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	// Specification of the desired behavior of the the cluster. More info:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
+	Template
+}
+
 type TemplateSpec struct {
 	DisplayName              string `json:"displayName"`
 	CatalogID                string `json:"catalogId,omitempty" norman:"type=reference[catalog]"`
@@ -88,7 +105,9 @@ type TemplateSpec struct {
 	FolderName     string `json:"folderName,omitempty"`
 	Icon           string `json:"icon,omitempty"`
 	IconFilename   string `json:"iconFilename,omitempty"`
-	Readme         string `json:"readme,omitempty"`
+
+	// Deprecated: Do not use
+	Readme string `json:"readme,omitempty" norman:"nocreate,noupdate"`
 
 	Categories []string              `json:"categories,omitempty"`
 	Versions   []TemplateVersionSpec `json:"versions,omitempty"`
@@ -97,6 +116,7 @@ type TemplateSpec struct {
 }
 
 type TemplateStatus struct {
+	HelmVersion string `json:"helmVersion,omitempty" norman:"noupdate,nocreate"`
 }
 
 type TemplateVersion struct {
@@ -110,22 +130,45 @@ type TemplateVersion struct {
 	Status TemplateVersionStatus `json:"status"`
 }
 
+type CatalogTemplateVersion struct {
+	types.Namespaced
+	metav1.TypeMeta `json:",inline"`
+	// Standard object’s metadata. More info:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#metadata
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	// Specification of the desired behavior of the the cluster. More info:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
+	TemplateVersion
+}
+
 type TemplateVersionSpec struct {
 	ExternalID          string            `json:"externalId,omitempty"`
 	Version             string            `json:"version,omitempty"`
 	RancherVersion      string            `json:"rancherVersion,omitempty"`
+	RequiredNamespace   string            `json:"requiredNamespace,omitempty"`
 	KubeVersion         string            `json:"kubeVersion,omitempty"`
-	Readme              string            `json:"readme,omitempty"`
-	AppReadme           string            `json:"appReadme,omitempty"`
 	UpgradeVersionLinks map[string]string `json:"upgradeVersionLinks,omitempty"`
 	Digest              string            `json:"digest,omitempty"`
+	RancherMinVersion   string            `json:"rancherMinVersion,omitempty"`
+	RancherMaxVersion   string            `json:"rancherMaxVersion,omitempty"`
 
-	Files             map[string]string `json:"files,omitempty"`
-	Questions         []Question        `json:"questions,omitempty"`
-	RequiredNamespace string            `json:"requiredNamespace,omitempty"`
+	// Deprecated: Do not use
+	Files map[string]string `json:"files,omitempty" norman:"nocreate,noupdate"`
+	// Deprecated: Do not use
+	Questions []Question `json:"questions,omitempty" norman:"nocreate,noupdate"`
+	// Deprecated: Do not use
+	Readme string `json:"readme,omitempty" norman:"nocreate,noupdate"`
+	// Deprecated: Do not use
+	AppReadme string `json:"appReadme,omitempty" norman:"nocreate,noupdate"`
+
+	// for local cache rebuilt
+	VersionName string   `json:"versionName,omitempty"`
+	VersionDir  string   `json:"versionDir,omitempty"`
+	VersionURLs []string `json:"versionUrls,omitempty"`
 }
 
 type TemplateVersionStatus struct {
+	HelmVersion string `json:"helmVersion,omitempty" norman:"noupdate,nocreate"`
 }
 
 type File struct {
@@ -151,6 +194,7 @@ type Question struct {
 	Subquestions      []SubQuestion `json:"subquestions,omitempty" yaml:"subquestions,omitempty"`
 	ShowIf            string        `json:"showIf,omitempty" yaml:"show_if,omitempty"`
 	ShowSubquestionIf string        `json:"showSubquestionIf,omitempty" yaml:"show_subquestion_if,omitempty"`
+	Satisfies         string        `json:"satisfies,omitempty" yaml:"satisfies,omitempty"`
 }
 
 type SubQuestion struct {
@@ -169,8 +213,12 @@ type SubQuestion struct {
 	ValidChars   string   `json:"validChars,omitempty" yaml:"valid_chars,omitempty"`
 	InvalidChars string   `json:"invalidChars,omitempty" yaml:"invalid_chars,omitempty"`
 	ShowIf       string   `json:"showIf,omitempty" yaml:"show_if,omitempty"`
+	Satisfies    string   `json:"satisfies,omitempty" yaml:"satisfies,omitempty"`
 }
 
+// TemplateContent is deprecated
+//
+// Deprecated: Do not use
 type TemplateContent struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object’s metadata. More info:
@@ -188,9 +236,20 @@ type ProjectCatalog struct {
 	ProjectName string `json:"projectName,omitempty" norman:"type=reference[project]"`
 }
 
+func (p *ProjectCatalog) ObjClusterName() string {
+	if parts := strings.SplitN(p.ProjectName, ":", 2); len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
+}
+
 type ClusterCatalog struct {
 	types.Namespaced
 
 	Catalog     `json:",inline" mapstructure:",squash"`
 	ClusterName string `json:"clusterName,omitempty" norman:"required,type=reference[cluster]"`
+}
+
+type CatalogRefresh struct {
+	Catalogs []string `json:"catalogs"`
 }

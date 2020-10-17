@@ -8,7 +8,7 @@ cd $(dirname $0)/..
 mkdir -p bin
 [ "$(uname)" != "Darwin" ] && LINKFLAGS="-linkmode external -extldflags -static -s"
 
-CGO_ENABLED=0 go build -ldflags "-X main.VERSION=$VERSION $LINKFLAGS" -o bin/kontainer-engine-driver-example
+CGO_ENABLED=0 go build -ldflags "-X main.VERSION=$VERSION $LINKFLAGS" -o bin/kontainer-engine-driver-linode
 echo built default
 for i in darwin linux
 do
@@ -16,12 +16,12 @@ do
         for arch in amd64 arm64
         do
             export GOOS=$i GOARCH=$arch
-            go build -o bin/kontainer-engine-driver-example-$i-$arch
+            go build -o bin/kontainer-engine-driver-linode-$i-$arch
             echo built $i-$arch
         done
     else
         export GOOS=$i GOARCH="amd64"
-        go build -o bin/kontainer-engine-driver-example-$i-amd64
+        go build -o bin/kontainer-engine-driver-linode-$i-amd64
         echo built $i
     fi
 done

@@ -36,6 +36,8 @@ type Interface interface {
 	ClusterRegistrationTokensGetter
 	CatalogsGetter
 	TemplatesGetter
+	CatalogTemplatesGetter
+	CatalogTemplateVersionsGetter
 	TemplateVersionsGetter
 	TemplateContentsGetter
 	GroupsGetter
@@ -51,64 +53,36 @@ type Interface interface {
 	ProjectNetworkPoliciesGetter
 	ClusterLoggingsGetter
 	ProjectLoggingsGetter
-	ListenConfigsGetter
 	SettingsGetter
-	NotifiersGetter
+	FeaturesGetter
 	ClusterAlertsGetter
 	ProjectAlertsGetter
+	NotifiersGetter
+	ClusterAlertGroupsGetter
+	ProjectAlertGroupsGetter
+	ClusterAlertRulesGetter
+	ProjectAlertRulesGetter
 	ComposeConfigsGetter
 	ProjectCatalogsGetter
 	ClusterCatalogsGetter
 	MultiClusterAppsGetter
+	MultiClusterAppRevisionsGetter
 	GlobalDNSsGetter
 	GlobalDNSProvidersGetter
 	KontainerDriversGetter
-}
-
-type Clients struct {
-	NodePool                                NodePoolClient
-	Node                                    NodeClient
-	NodeDriver                              NodeDriverClient
-	NodeTemplate                            NodeTemplateClient
-	Project                                 ProjectClient
-	GlobalRole                              GlobalRoleClient
-	GlobalRoleBinding                       GlobalRoleBindingClient
-	RoleTemplate                            RoleTemplateClient
-	PodSecurityPolicyTemplate               PodSecurityPolicyTemplateClient
-	PodSecurityPolicyTemplateProjectBinding PodSecurityPolicyTemplateProjectBindingClient
-	ClusterRoleTemplateBinding              ClusterRoleTemplateBindingClient
-	ProjectRoleTemplateBinding              ProjectRoleTemplateBindingClient
-	Cluster                                 ClusterClient
-	ClusterRegistrationToken                ClusterRegistrationTokenClient
-	Catalog                                 CatalogClient
-	Template                                TemplateClient
-	TemplateVersion                         TemplateVersionClient
-	TemplateContent                         TemplateContentClient
-	Group                                   GroupClient
-	GroupMember                             GroupMemberClient
-	Principal                               PrincipalClient
-	User                                    UserClient
-	AuthConfig                              AuthConfigClient
-	LdapConfig                              LdapConfigClient
-	Token                                   TokenClient
-	DynamicSchema                           DynamicSchemaClient
-	Preference                              PreferenceClient
-	UserAttribute                           UserAttributeClient
-	ProjectNetworkPolicy                    ProjectNetworkPolicyClient
-	ClusterLogging                          ClusterLoggingClient
-	ProjectLogging                          ProjectLoggingClient
-	ListenConfig                            ListenConfigClient
-	Setting                                 SettingClient
-	Notifier                                NotifierClient
-	ClusterAlert                            ClusterAlertClient
-	ProjectAlert                            ProjectAlertClient
-	ComposeConfig                           ComposeConfigClient
-	ProjectCatalog                          ProjectCatalogClient
-	ClusterCatalog                          ClusterCatalogClient
-	MultiClusterApp                         MultiClusterAppClient
-	GlobalDNS                               GlobalDNSClient
-	GlobalDNSProvider                       GlobalDNSProviderClient
-	KontainerDriver                         KontainerDriverClient
+	EtcdBackupsGetter
+	ClusterScansGetter
+	MonitorMetricsGetter
+	ClusterMonitorGraphsGetter
+	ProjectMonitorGraphsGetter
+	CloudCredentialsGetter
+	ClusterTemplatesGetter
+	ClusterTemplateRevisionsGetter
+	RKEK8sSystemImagesGetter
+	RKEK8sServiceOptionsGetter
+	RKEAddonsGetter
+	CisConfigsGetter
+	CisBenchmarkVersionsGetter
 }
 
 type Client struct {
@@ -132,6 +106,8 @@ type Client struct {
 	clusterRegistrationTokenControllers                map[string]ClusterRegistrationTokenController
 	catalogControllers                                 map[string]CatalogController
 	templateControllers                                map[string]TemplateController
+	catalogTemplateControllers                         map[string]CatalogTemplateController
+	catalogTemplateVersionControllers                  map[string]CatalogTemplateVersionController
 	templateVersionControllers                         map[string]TemplateVersionController
 	templateContentControllers                         map[string]TemplateContentController
 	groupControllers                                   map[string]GroupController
@@ -147,182 +123,36 @@ type Client struct {
 	projectNetworkPolicyControllers                    map[string]ProjectNetworkPolicyController
 	clusterLoggingControllers                          map[string]ClusterLoggingController
 	projectLoggingControllers                          map[string]ProjectLoggingController
-	listenConfigControllers                            map[string]ListenConfigController
 	settingControllers                                 map[string]SettingController
-	notifierControllers                                map[string]NotifierController
+	featureControllers                                 map[string]FeatureController
 	clusterAlertControllers                            map[string]ClusterAlertController
 	projectAlertControllers                            map[string]ProjectAlertController
+	notifierControllers                                map[string]NotifierController
+	clusterAlertGroupControllers                       map[string]ClusterAlertGroupController
+	projectAlertGroupControllers                       map[string]ProjectAlertGroupController
+	clusterAlertRuleControllers                        map[string]ClusterAlertRuleController
+	projectAlertRuleControllers                        map[string]ProjectAlertRuleController
 	composeConfigControllers                           map[string]ComposeConfigController
 	projectCatalogControllers                          map[string]ProjectCatalogController
 	clusterCatalogControllers                          map[string]ClusterCatalogController
 	multiClusterAppControllers                         map[string]MultiClusterAppController
+	multiClusterAppRevisionControllers                 map[string]MultiClusterAppRevisionController
 	globalDnsControllers                               map[string]GlobalDNSController
 	globalDnsProviderControllers                       map[string]GlobalDNSProviderController
 	kontainerDriverControllers                         map[string]KontainerDriverController
-}
-
-func Factory(ctx context.Context, config rest.Config) (context.Context, controller.Starter, error) {
-	c, err := NewForConfig(config)
-	if err != nil {
-		return ctx, nil, err
-	}
-
-	cs := NewClientsFromInterface(c)
-
-	ctx = context.WithValue(ctx, contextKeyType{}, c)
-	ctx = context.WithValue(ctx, contextClientsKeyType{}, cs)
-	return ctx, c, nil
-}
-
-func ClientsFrom(ctx context.Context) *Clients {
-	return ctx.Value(contextClientsKeyType{}).(*Clients)
-}
-
-func From(ctx context.Context) Interface {
-	return ctx.Value(contextKeyType{}).(Interface)
-}
-
-func NewClients(config rest.Config) (*Clients, error) {
-	iface, err := NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-	return NewClientsFromInterface(iface), nil
-}
-
-func NewClientsFromInterface(iface Interface) *Clients {
-	return &Clients{
-
-		NodePool: &nodePoolClient2{
-			iface: iface.NodePools(""),
-		},
-		Node: &nodeClient2{
-			iface: iface.Nodes(""),
-		},
-		NodeDriver: &nodeDriverClient2{
-			iface: iface.NodeDrivers(""),
-		},
-		NodeTemplate: &nodeTemplateClient2{
-			iface: iface.NodeTemplates(""),
-		},
-		Project: &projectClient2{
-			iface: iface.Projects(""),
-		},
-		GlobalRole: &globalRoleClient2{
-			iface: iface.GlobalRoles(""),
-		},
-		GlobalRoleBinding: &globalRoleBindingClient2{
-			iface: iface.GlobalRoleBindings(""),
-		},
-		RoleTemplate: &roleTemplateClient2{
-			iface: iface.RoleTemplates(""),
-		},
-		PodSecurityPolicyTemplate: &podSecurityPolicyTemplateClient2{
-			iface: iface.PodSecurityPolicyTemplates(""),
-		},
-		PodSecurityPolicyTemplateProjectBinding: &podSecurityPolicyTemplateProjectBindingClient2{
-			iface: iface.PodSecurityPolicyTemplateProjectBindings(""),
-		},
-		ClusterRoleTemplateBinding: &clusterRoleTemplateBindingClient2{
-			iface: iface.ClusterRoleTemplateBindings(""),
-		},
-		ProjectRoleTemplateBinding: &projectRoleTemplateBindingClient2{
-			iface: iface.ProjectRoleTemplateBindings(""),
-		},
-		Cluster: &clusterClient2{
-			iface: iface.Clusters(""),
-		},
-		ClusterRegistrationToken: &clusterRegistrationTokenClient2{
-			iface: iface.ClusterRegistrationTokens(""),
-		},
-		Catalog: &catalogClient2{
-			iface: iface.Catalogs(""),
-		},
-		Template: &templateClient2{
-			iface: iface.Templates(""),
-		},
-		TemplateVersion: &templateVersionClient2{
-			iface: iface.TemplateVersions(""),
-		},
-		TemplateContent: &templateContentClient2{
-			iface: iface.TemplateContents(""),
-		},
-		Group: &groupClient2{
-			iface: iface.Groups(""),
-		},
-		GroupMember: &groupMemberClient2{
-			iface: iface.GroupMembers(""),
-		},
-		Principal: &principalClient2{
-			iface: iface.Principals(""),
-		},
-		User: &userClient2{
-			iface: iface.Users(""),
-		},
-		AuthConfig: &authConfigClient2{
-			iface: iface.AuthConfigs(""),
-		},
-		LdapConfig: &ldapConfigClient2{
-			iface: iface.LdapConfigs(""),
-		},
-		Token: &tokenClient2{
-			iface: iface.Tokens(""),
-		},
-		DynamicSchema: &dynamicSchemaClient2{
-			iface: iface.DynamicSchemas(""),
-		},
-		Preference: &preferenceClient2{
-			iface: iface.Preferences(""),
-		},
-		UserAttribute: &userAttributeClient2{
-			iface: iface.UserAttributes(""),
-		},
-		ProjectNetworkPolicy: &projectNetworkPolicyClient2{
-			iface: iface.ProjectNetworkPolicies(""),
-		},
-		ClusterLogging: &clusterLoggingClient2{
-			iface: iface.ClusterLoggings(""),
-		},
-		ProjectLogging: &projectLoggingClient2{
-			iface: iface.ProjectLoggings(""),
-		},
-		ListenConfig: &listenConfigClient2{
-			iface: iface.ListenConfigs(""),
-		},
-		Setting: &settingClient2{
-			iface: iface.Settings(""),
-		},
-		Notifier: &notifierClient2{
-			iface: iface.Notifiers(""),
-		},
-		ClusterAlert: &clusterAlertClient2{
-			iface: iface.ClusterAlerts(""),
-		},
-		ProjectAlert: &projectAlertClient2{
-			iface: iface.ProjectAlerts(""),
-		},
-		ComposeConfig: &composeConfigClient2{
-			iface: iface.ComposeConfigs(""),
-		},
-		ProjectCatalog: &projectCatalogClient2{
-			iface: iface.ProjectCatalogs(""),
-		},
-		ClusterCatalog: &clusterCatalogClient2{
-			iface: iface.ClusterCatalogs(""),
-		},
-		MultiClusterApp: &multiClusterAppClient2{
-			iface: iface.MultiClusterApps(""),
-		},
-		GlobalDNS: &globalDnsClient2{
-			iface: iface.GlobalDNSs(""),
-		},
-		GlobalDNSProvider: &globalDnsProviderClient2{
-			iface: iface.GlobalDNSProviders(""),
-		},
-		KontainerDriver: &kontainerDriverClient2{
-			iface: iface.KontainerDrivers(""),
-		},
-	}
+	etcdBackupControllers                              map[string]EtcdBackupController
+	clusterScanControllers                             map[string]ClusterScanController
+	monitorMetricControllers                           map[string]MonitorMetricController
+	clusterMonitorGraphControllers                     map[string]ClusterMonitorGraphController
+	projectMonitorGraphControllers                     map[string]ProjectMonitorGraphController
+	cloudCredentialControllers                         map[string]CloudCredentialController
+	clusterTemplateControllers                         map[string]ClusterTemplateController
+	clusterTemplateRevisionControllers                 map[string]ClusterTemplateRevisionController
+	rkeK8sSystemImageControllers                       map[string]RKEK8sSystemImageController
+	rkeK8sServiceOptionControllers                     map[string]RKEK8sServiceOptionController
+	rkeAddonControllers                                map[string]RKEAddonController
+	cisConfigControllers                               map[string]CisConfigController
+	cisBenchmarkVersionControllers                     map[string]CisBenchmarkVersionController
 }
 
 func NewForConfig(config rest.Config) (Interface, error) {
@@ -354,6 +184,8 @@ func NewForConfig(config rest.Config) (Interface, error) {
 		clusterRegistrationTokenControllers:                map[string]ClusterRegistrationTokenController{},
 		catalogControllers:                                 map[string]CatalogController{},
 		templateControllers:                                map[string]TemplateController{},
+		catalogTemplateControllers:                         map[string]CatalogTemplateController{},
+		catalogTemplateVersionControllers:                  map[string]CatalogTemplateVersionController{},
 		templateVersionControllers:                         map[string]TemplateVersionController{},
 		templateContentControllers:                         map[string]TemplateContentController{},
 		groupControllers:                                   map[string]GroupController{},
@@ -369,18 +201,36 @@ func NewForConfig(config rest.Config) (Interface, error) {
 		projectNetworkPolicyControllers:                    map[string]ProjectNetworkPolicyController{},
 		clusterLoggingControllers:                          map[string]ClusterLoggingController{},
 		projectLoggingControllers:                          map[string]ProjectLoggingController{},
-		listenConfigControllers:                            map[string]ListenConfigController{},
 		settingControllers:                                 map[string]SettingController{},
-		notifierControllers:                                map[string]NotifierController{},
+		featureControllers:                                 map[string]FeatureController{},
 		clusterAlertControllers:                            map[string]ClusterAlertController{},
 		projectAlertControllers:                            map[string]ProjectAlertController{},
+		notifierControllers:                                map[string]NotifierController{},
+		clusterAlertGroupControllers:                       map[string]ClusterAlertGroupController{},
+		projectAlertGroupControllers:                       map[string]ProjectAlertGroupController{},
+		clusterAlertRuleControllers:                        map[string]ClusterAlertRuleController{},
+		projectAlertRuleControllers:                        map[string]ProjectAlertRuleController{},
 		composeConfigControllers:                           map[string]ComposeConfigController{},
 		projectCatalogControllers:                          map[string]ProjectCatalogController{},
 		clusterCatalogControllers:                          map[string]ClusterCatalogController{},
 		multiClusterAppControllers:                         map[string]MultiClusterAppController{},
+		multiClusterAppRevisionControllers:                 map[string]MultiClusterAppRevisionController{},
 		globalDnsControllers:                               map[string]GlobalDNSController{},
 		globalDnsProviderControllers:                       map[string]GlobalDNSProviderController{},
 		kontainerDriverControllers:                         map[string]KontainerDriverController{},
+		etcdBackupControllers:                              map[string]EtcdBackupController{},
+		clusterScanControllers:                             map[string]ClusterScanController{},
+		monitorMetricControllers:                           map[string]MonitorMetricController{},
+		clusterMonitorGraphControllers:                     map[string]ClusterMonitorGraphController{},
+		projectMonitorGraphControllers:                     map[string]ProjectMonitorGraphController{},
+		cloudCredentialControllers:                         map[string]CloudCredentialController{},
+		clusterTemplateControllers:                         map[string]ClusterTemplateController{},
+		clusterTemplateRevisionControllers:                 map[string]ClusterTemplateRevisionController{},
+		rkeK8sSystemImageControllers:                       map[string]RKEK8sSystemImageController{},
+		rkeK8sServiceOptionControllers:                     map[string]RKEK8sServiceOptionController{},
+		rkeAddonControllers:                                map[string]RKEAddonController{},
+		cisConfigControllers:                               map[string]CisConfigController{},
+		cisBenchmarkVersionControllers:                     map[string]CisBenchmarkVersionController{},
 	}, nil
 }
 
@@ -604,6 +454,32 @@ func (c *Client) Templates(namespace string) TemplateInterface {
 	}
 }
 
+type CatalogTemplatesGetter interface {
+	CatalogTemplates(namespace string) CatalogTemplateInterface
+}
+
+func (c *Client) CatalogTemplates(namespace string) CatalogTemplateInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &CatalogTemplateResource, CatalogTemplateGroupVersionKind, catalogTemplateFactory{})
+	return &catalogTemplateClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type CatalogTemplateVersionsGetter interface {
+	CatalogTemplateVersions(namespace string) CatalogTemplateVersionInterface
+}
+
+func (c *Client) CatalogTemplateVersions(namespace string) CatalogTemplateVersionInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &CatalogTemplateVersionResource, CatalogTemplateVersionGroupVersionKind, catalogTemplateVersionFactory{})
+	return &catalogTemplateVersionClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
 type TemplateVersionsGetter interface {
 	TemplateVersions(namespace string) TemplateVersionInterface
 }
@@ -799,19 +675,6 @@ func (c *Client) ProjectLoggings(namespace string) ProjectLoggingInterface {
 	}
 }
 
-type ListenConfigsGetter interface {
-	ListenConfigs(namespace string) ListenConfigInterface
-}
-
-func (c *Client) ListenConfigs(namespace string) ListenConfigInterface {
-	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ListenConfigResource, ListenConfigGroupVersionKind, listenConfigFactory{})
-	return &listenConfigClient{
-		ns:           namespace,
-		client:       c,
-		objectClient: objectClient,
-	}
-}
-
 type SettingsGetter interface {
 	Settings(namespace string) SettingInterface
 }
@@ -825,13 +688,13 @@ func (c *Client) Settings(namespace string) SettingInterface {
 	}
 }
 
-type NotifiersGetter interface {
-	Notifiers(namespace string) NotifierInterface
+type FeaturesGetter interface {
+	Features(namespace string) FeatureInterface
 }
 
-func (c *Client) Notifiers(namespace string) NotifierInterface {
-	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &NotifierResource, NotifierGroupVersionKind, notifierFactory{})
-	return &notifierClient{
+func (c *Client) Features(namespace string) FeatureInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &FeatureResource, FeatureGroupVersionKind, featureFactory{})
+	return &featureClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,
@@ -858,6 +721,71 @@ type ProjectAlertsGetter interface {
 func (c *Client) ProjectAlerts(namespace string) ProjectAlertInterface {
 	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ProjectAlertResource, ProjectAlertGroupVersionKind, projectAlertFactory{})
 	return &projectAlertClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type NotifiersGetter interface {
+	Notifiers(namespace string) NotifierInterface
+}
+
+func (c *Client) Notifiers(namespace string) NotifierInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &NotifierResource, NotifierGroupVersionKind, notifierFactory{})
+	return &notifierClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ClusterAlertGroupsGetter interface {
+	ClusterAlertGroups(namespace string) ClusterAlertGroupInterface
+}
+
+func (c *Client) ClusterAlertGroups(namespace string) ClusterAlertGroupInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ClusterAlertGroupResource, ClusterAlertGroupGroupVersionKind, clusterAlertGroupFactory{})
+	return &clusterAlertGroupClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ProjectAlertGroupsGetter interface {
+	ProjectAlertGroups(namespace string) ProjectAlertGroupInterface
+}
+
+func (c *Client) ProjectAlertGroups(namespace string) ProjectAlertGroupInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ProjectAlertGroupResource, ProjectAlertGroupGroupVersionKind, projectAlertGroupFactory{})
+	return &projectAlertGroupClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ClusterAlertRulesGetter interface {
+	ClusterAlertRules(namespace string) ClusterAlertRuleInterface
+}
+
+func (c *Client) ClusterAlertRules(namespace string) ClusterAlertRuleInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ClusterAlertRuleResource, ClusterAlertRuleGroupVersionKind, clusterAlertRuleFactory{})
+	return &clusterAlertRuleClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ProjectAlertRulesGetter interface {
+	ProjectAlertRules(namespace string) ProjectAlertRuleInterface
+}
+
+func (c *Client) ProjectAlertRules(namespace string) ProjectAlertRuleInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ProjectAlertRuleResource, ProjectAlertRuleGroupVersionKind, projectAlertRuleFactory{})
+	return &projectAlertRuleClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,
@@ -916,6 +844,19 @@ func (c *Client) MultiClusterApps(namespace string) MultiClusterAppInterface {
 	}
 }
 
+type MultiClusterAppRevisionsGetter interface {
+	MultiClusterAppRevisions(namespace string) MultiClusterAppRevisionInterface
+}
+
+func (c *Client) MultiClusterAppRevisions(namespace string) MultiClusterAppRevisionInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &MultiClusterAppRevisionResource, MultiClusterAppRevisionGroupVersionKind, multiClusterAppRevisionFactory{})
+	return &multiClusterAppRevisionClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
 type GlobalDNSsGetter interface {
 	GlobalDNSs(namespace string) GlobalDNSInterface
 }
@@ -949,6 +890,175 @@ type KontainerDriversGetter interface {
 func (c *Client) KontainerDrivers(namespace string) KontainerDriverInterface {
 	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &KontainerDriverResource, KontainerDriverGroupVersionKind, kontainerDriverFactory{})
 	return &kontainerDriverClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type EtcdBackupsGetter interface {
+	EtcdBackups(namespace string) EtcdBackupInterface
+}
+
+func (c *Client) EtcdBackups(namespace string) EtcdBackupInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &EtcdBackupResource, EtcdBackupGroupVersionKind, etcdBackupFactory{})
+	return &etcdBackupClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ClusterScansGetter interface {
+	ClusterScans(namespace string) ClusterScanInterface
+}
+
+func (c *Client) ClusterScans(namespace string) ClusterScanInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ClusterScanResource, ClusterScanGroupVersionKind, clusterScanFactory{})
+	return &clusterScanClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type MonitorMetricsGetter interface {
+	MonitorMetrics(namespace string) MonitorMetricInterface
+}
+
+func (c *Client) MonitorMetrics(namespace string) MonitorMetricInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &MonitorMetricResource, MonitorMetricGroupVersionKind, monitorMetricFactory{})
+	return &monitorMetricClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ClusterMonitorGraphsGetter interface {
+	ClusterMonitorGraphs(namespace string) ClusterMonitorGraphInterface
+}
+
+func (c *Client) ClusterMonitorGraphs(namespace string) ClusterMonitorGraphInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ClusterMonitorGraphResource, ClusterMonitorGraphGroupVersionKind, clusterMonitorGraphFactory{})
+	return &clusterMonitorGraphClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ProjectMonitorGraphsGetter interface {
+	ProjectMonitorGraphs(namespace string) ProjectMonitorGraphInterface
+}
+
+func (c *Client) ProjectMonitorGraphs(namespace string) ProjectMonitorGraphInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ProjectMonitorGraphResource, ProjectMonitorGraphGroupVersionKind, projectMonitorGraphFactory{})
+	return &projectMonitorGraphClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type CloudCredentialsGetter interface {
+	CloudCredentials(namespace string) CloudCredentialInterface
+}
+
+func (c *Client) CloudCredentials(namespace string) CloudCredentialInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &CloudCredentialResource, CloudCredentialGroupVersionKind, cloudCredentialFactory{})
+	return &cloudCredentialClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ClusterTemplatesGetter interface {
+	ClusterTemplates(namespace string) ClusterTemplateInterface
+}
+
+func (c *Client) ClusterTemplates(namespace string) ClusterTemplateInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ClusterTemplateResource, ClusterTemplateGroupVersionKind, clusterTemplateFactory{})
+	return &clusterTemplateClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ClusterTemplateRevisionsGetter interface {
+	ClusterTemplateRevisions(namespace string) ClusterTemplateRevisionInterface
+}
+
+func (c *Client) ClusterTemplateRevisions(namespace string) ClusterTemplateRevisionInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ClusterTemplateRevisionResource, ClusterTemplateRevisionGroupVersionKind, clusterTemplateRevisionFactory{})
+	return &clusterTemplateRevisionClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type RKEK8sSystemImagesGetter interface {
+	RKEK8sSystemImages(namespace string) RKEK8sSystemImageInterface
+}
+
+func (c *Client) RKEK8sSystemImages(namespace string) RKEK8sSystemImageInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &RKEK8sSystemImageResource, RKEK8sSystemImageGroupVersionKind, rkeK8sSystemImageFactory{})
+	return &rkeK8sSystemImageClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type RKEK8sServiceOptionsGetter interface {
+	RKEK8sServiceOptions(namespace string) RKEK8sServiceOptionInterface
+}
+
+func (c *Client) RKEK8sServiceOptions(namespace string) RKEK8sServiceOptionInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &RKEK8sServiceOptionResource, RKEK8sServiceOptionGroupVersionKind, rkeK8sServiceOptionFactory{})
+	return &rkeK8sServiceOptionClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type RKEAddonsGetter interface {
+	RKEAddons(namespace string) RKEAddonInterface
+}
+
+func (c *Client) RKEAddons(namespace string) RKEAddonInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &RKEAddonResource, RKEAddonGroupVersionKind, rkeAddonFactory{})
+	return &rkeAddonClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type CisConfigsGetter interface {
+	CisConfigs(namespace string) CisConfigInterface
+}
+
+func (c *Client) CisConfigs(namespace string) CisConfigInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &CisConfigResource, CisConfigGroupVersionKind, cisConfigFactory{})
+	return &cisConfigClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type CisBenchmarkVersionsGetter interface {
+	CisBenchmarkVersions(namespace string) CisBenchmarkVersionInterface
+}
+
+func (c *Client) CisBenchmarkVersions(namespace string) CisBenchmarkVersionInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &CisBenchmarkVersionResource, CisBenchmarkVersionGroupVersionKind, cisBenchmarkVersionFactory{})
+	return &cisBenchmarkVersionClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,

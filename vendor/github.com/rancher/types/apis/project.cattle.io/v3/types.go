@@ -35,6 +35,7 @@ type RegistryCredential struct {
 	Username    string `json:"username"`
 	Password    string `json:"password" norman:"writeOnly"`
 	Auth        string `json:"auth" norman:"writeOnly"`
+	Email       string `json:"email"`
 }
 
 type Certificate struct {
@@ -110,4 +111,10 @@ type Workload struct {
 
 type DeploymentRollbackInput struct {
 	ReplicaSetID string `json:"replicaSetId" norman:"type=reference[replicaSet]"`
+}
+
+type WorkloadMetric struct {
+	Port   int32  `json:"port,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Schema string `json:"schema,omitempty" norman:"type=enum,options=HTTP|HTTPS"`
 }

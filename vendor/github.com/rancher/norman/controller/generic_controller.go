@@ -50,6 +50,7 @@ type GenericController interface {
 	AddHandler(ctx context.Context, name string, handler HandlerFunc)
 	HandlerCount() int
 	Enqueue(namespace, name string)
+	EnqueueAfter(namespace, name string, after time.Duration)
 	Sync(ctx context.Context) error
 	Start(ctx context.Context, threadiness int) error
 }
@@ -77,6 +78,7 @@ type genericController struct {
 	generation          int
 	informer            cache.SharedIndexInformer
 	handlers            []*handlerDef
+	preStart            []string
 	queue               workqueue.RateLimitingInterface
 	name                string
 	running             bool
@@ -86,20 +88,21 @@ type genericController struct {
 func NewGenericController(name string, genericClient Backend) GenericController {
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
-			ListFunc:  genericClient.List,
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				// If ResourceVersion is set to 0 then the Limit is ignored on the API side. Usually
+				// that's not a problem, but with very large counts of a single object type the client will
+				// hit it's connection timeout
+				if options.ResourceVersion == "0" {
+					options.ResourceVersion = ""
+				}
+				return genericClient.List(options)
+			},
 			WatchFunc: genericClient.Watch,
 		},
 		genericClient.ObjectFactory().Object(), resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 
-	rl := workqueue.NewMaxOfRateLimiter(
-		workqueue.NewItemExponentialFailureRateLimiter(500*time.Millisecond, 1000*time.Second),
-		// 10 qps, 100 bucket size.  This is only for retry speed and its only the overall factor (not per item)
-		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
-	)
-
 	return &genericController{
 		informer: informer,
-		queue:    workqueue.NewNamedRateLimitingQueue(rl, name),
 		name:     name,
 	}
 }
@@ -117,35 +120,74 @@ func (g *genericController) Informer() cache.SharedIndexInformer {
 }
 
 func (g *genericController) Enqueue(namespace, name string) {
-	if namespace == "" {
-		g.queue.Add(name)
+	key := name
+	if namespace != "" {
+		key = namespace + "/" + name
+	}
+	if g.queue == nil {
+		g.preStart = append(g.preStart, key)
 	} else {
-		g.queue.Add(namespace + "/" + name)
+		g.queue.AddRateLimited(key)
+	}
+}
+
+func (g *genericController) EnqueueAfter(namespace, name string, after time.Duration) {
+	key := name
+	if namespace != "" {
+		key = namespace + "/" + name
+	}
+	if g.queue != nil {
+		g.queue.AddAfter(key, after)
 	}
 }
 
 func (g *genericController) AddHandler(ctx context.Context, name string, handler HandlerFunc) {
+	t := getHandlerTransaction(ctx)
+	if t == nil {
+		g.addHandler(ctx, name, handler)
+		return
+	}
+
+	go func() {
+		if t.shouldContinue() {
+			g.addHandler(ctx, name, handler)
+		}
+	}()
+}
+
+func (g *genericController) addHandler(ctx context.Context, name string, handler HandlerFunc) {
 	g.Lock()
+	defer g.Unlock()
+
+	g.generation++
 	h := &handlerDef{
 		name:       name,
 		generation: g.generation,
 		handler:    handler,
 	}
-	g.handlers = append(g.handlers, h)
-	g.Unlock()
 
-	go func() {
+	go func(gen int) {
 		<-ctx.Done()
 		g.Lock()
-		var handlers []*handlerDef
+		defer g.Unlock()
+		var newHandlers []*handlerDef
 		for _, handler := range g.handlers {
-			if handler != h {
-				handlers = append(handlers, h)
+			if handler.generation == gen {
+				continue
 			}
+			newHandlers = append(newHandlers, handler)
 		}
-		g.handlers = handlers
-		g.Unlock()
-	}()
+		g.handlers = newHandlers
+	}(h.generation)
+
+	g.handlers = append(g.handlers, h)
+
+	if g.synced {
+		for _, key := range g.informer.GetStore().ListKeys() {
+			g.queue.Add(key)
+		}
+	}
+
 }
 
 func (g *genericController) Sync(ctx context.Context) error {
@@ -155,9 +197,29 @@ func (g *genericController) Sync(ctx context.Context) error {
 	return g.sync(ctx)
 }
 
-func (g *genericController) sync(ctx context.Context) error {
+func (g *genericController) sync(ctx context.Context) (retErr error) {
 	if g.synced {
 		return nil
+	}
+
+	if g.queue == nil {
+		rl := workqueue.NewMaxOfRateLimiter(
+			workqueue.NewItemExponentialFailureRateLimiter(500*time.Millisecond, 1000*time.Second),
+			// 10 qps, 100 bucket size.  This is only for retry speed and its only the overall factor (not per item)
+			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+		)
+
+		g.queue = workqueue.NewNamedRateLimitingQueue(rl, g.name)
+		for _, key := range g.preStart {
+			g.queue.Add(key)
+		}
+		g.preStart = nil
+
+		defer func() {
+			if retErr != nil {
+				g.queue.ShutDown()
+			}
+		}()
 	}
 
 	defer utilruntime.HandleCrash()
@@ -170,14 +232,14 @@ func (g *genericController) sync(ctx context.Context) error {
 		DeleteFunc: g.queueObject,
 	})
 
-	logrus.Debugf("Syncing %s Controller", g.name)
+	logrus.Tracef("Syncing %s Controller", g.name)
 
 	go g.informer.Run(ctx.Done())
 
 	if !cache.WaitForCacheSync(ctx.Done(), g.informer.HasSynced) {
 		return fmt.Errorf("failed to sync controller %s", g.name)
 	}
-	logrus.Debugf("Syncing %s Controller Done", g.name)
+	logrus.Tracef("Syncing %s Controller Done", g.name)
 
 	g.synced = true
 	return nil
@@ -196,25 +258,9 @@ func (g *genericController) Start(ctx context.Context, threadiness int) error {
 			threadiness = g.threadinessOverride
 		}
 		go g.run(ctx, threadiness)
+		g.running = true
 	}
 
-	if g.running {
-		for _, h := range g.handlers {
-			if h.generation != g.generation {
-				continue
-			}
-			for _, key := range g.informer.GetStore().ListKeys() {
-				g.queueObject(generationKey{
-					generation: g.generation,
-					key:        key,
-				})
-			}
-			break
-		}
-	}
-
-	g.generation++
-	g.running = true
 	return nil
 }
 
@@ -262,13 +308,13 @@ func (g *genericController) processNextWorkItem() bool {
 	}
 	if _, ok := checkErr.(*ForgetError); err == nil || ok {
 		if ok {
-			logrus.Debugf("%v %v completed with dropped err: %v", g.name, key, err)
+			logrus.Tracef("%v %v completed with dropped err: %v", g.name, key, err)
 		}
 		g.queue.Forget(key)
 		return true
 	}
 
-	if err := filterConflictsError(err); err != nil {
+	if err = filterConflictsError(err); err != nil {
 		logrus.Errorf("%v %v %v", g.name, key, err)
 	}
 
@@ -302,9 +348,9 @@ func filterConflictsError(err error) error {
 
 	if errs, ok := errors2.Cause(err).(*types.MultiErrors); ok {
 		var newErrors []error
-		for _, err := range errs.Errors {
-			if !ignoreError(err, true) {
-				newErrors = append(newErrors)
+		for _, newError := range errs.Errors {
+			if !ignoreError(newError, true) {
+				newErrors = append(newErrors, newError)
 			}
 		}
 		return types.NewErrors(newErrors...)
@@ -343,9 +389,10 @@ func (g *genericController) syncHandler(key interface{}) (err error) {
 			continue
 		}
 
-		logrus.Debugf("%s calling handler %s %s", g.name, handler.name, s)
+		logrus.Tracef("%s calling handler %s %s", g.name, handler.name, s)
 		metrics.IncTotalHandlerExecution(g.name, handler.name)
-		if newObj, err := handler.handler(s, obj); err != nil {
+		var newObj interface{}
+		if newObj, err = handler.handler(s, obj); err != nil {
 			if !ignoreError(err, false) {
 				metrics.IncTotalHandlerFailure(g.name, handler.name, s)
 			}

@@ -25,7 +25,17 @@ type Token struct {
 	Expired         bool              `json:"expired"`
 	ExpiresAt       string            `json:"expiresAt"`
 	Current         bool              `json:"current"`
+	ClusterName     string            `json:"clusterName,omitempty" norman:"noupdate,type=reference[cluster]"`
+	Enabled         *bool             `json:"enabled,omitempty" norman:"default=true"`
 }
+
+func (t *Token) ObjClusterName() string {
+	return t.ClusterName
+}
+
+// +genclient
+// +genclient:nonNamespaced
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type User struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -37,7 +47,7 @@ type User struct {
 	Password           string     `json:"password,omitempty" norman:"writeOnly,noupdate"`
 	MustChangePassword bool       `json:"mustChangePassword,omitempty"`
 	PrincipalIDs       []string   `json:"principalIds,omitempty" norman:"type=array[reference[principal]]"`
-	Me                 bool       `json:"me,omitempty"`
+	Me                 bool       `json:"me,omitempty" norman:"nocreate,noupdate"`
 	Enabled            *bool      `json:"enabled,omitempty" norman:"default=true"`
 	Spec               UserSpec   `json:"spec,omitempty"`
 	Status             UserStatus `json:"status"`
@@ -71,6 +81,8 @@ type UserAttribute struct {
 
 	UserName        string
 	GroupPrincipals map[string]Principals // the value is a []Principal, but code generator cannot handle slice as a value
+	LastRefresh     string
+	NeedsRefresh    bool
 }
 
 type Principals struct {
@@ -146,6 +158,10 @@ type GithubConfig struct {
 	TLS          bool   `json:"tls,omitempty" norman:"notnullable,default=true" norman:"required"`
 	ClientID     string `json:"clientId,omitempty" norman:"required"`
 	ClientSecret string `json:"clientSecret,omitempty" norman:"required,type=password"`
+
+	// AdditionalClientIDs is a map of clientID to client secrets
+	AdditionalClientIDs map[string]string `json:"additionalClientIds,omitempty" norman:"nocreate,noupdate"`
+	HostnameToClientID  map[string]string `json:"hostnameToClientId,omitempty" norman:"nocreate,noupdate"`
 }
 
 type GithubConfigTestOutput struct {
@@ -156,6 +172,29 @@ type GithubConfigApplyInput struct {
 	GithubConfig GithubConfig `json:"githubConfig,omitempty"`
 	Code         string       `json:"code,omitempty"`
 	Enabled      bool         `json:"enabled,omitempty"`
+}
+
+type GoogleOauthConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	AuthConfig        `json:",inline" mapstructure:",squash"`
+
+	OauthCredential              string `json:"oauthCredential,omitempty" norman:"required,type=password,notnullable"`
+	ServiceAccountCredential     string `json:"serviceAccountCredential,omitempty" norman:"required,type=password,notnullable"`
+	AdminEmail                   string `json:"adminEmail,omitempty" norman:"required,notnullable"`
+	Hostname                     string `json:"hostname,omitempty" norman:"required,notnullable,noupdate"`
+	UserInfoEndpoint             string `json:"userInfoEndpoint" norman:"default=https://openidconnect.googleapis.com/v1/userinfo,required,notnullable"`
+	NestedGroupMembershipEnabled bool   `json:"nestedGroupMembershipEnabled"    norman:"default=false"`
+}
+
+type GoogleOauthConfigTestOutput struct {
+	RedirectURL string `json:"redirectUrl"`
+}
+
+type GoogleOauthConfigApplyInput struct {
+	GoogleOauthConfig GoogleOauthConfig `json:"googleOauthConfig,omitempty"`
+	Code              string            `json:"code,omitempty"`
+	Enabled           bool              `json:"enabled,omitempty"`
 }
 
 type AzureADConfig struct {
@@ -221,34 +260,39 @@ type ActiveDirectoryTestAndApplyInput struct {
 	Enabled               bool                  `json:"enabled,omitempty"`
 }
 
+type LdapFields struct {
+	Servers                         []string `json:"servers,omitempty"                         norman:"type=array[string],notnullable,required"`
+	Port                            int64    `json:"port,omitempty"                            norman:"default=389,notnullable,required"`
+	TLS                             bool     `json:"tls,omitempty"                             norman:"default=false,notnullable,required"`
+	Certificate                     string   `json:"certificate,omitempty"`
+	ServiceAccountDistinguishedName string   `json:"serviceAccountDistinguishedName,omitempty" norman:"required"`
+	ServiceAccountPassword          string   `json:"serviceAccountPassword,omitempty"          norman:"type=password,required"`
+	UserDisabledBitMask             int64    `json:"userDisabledBitMask,omitempty"`
+	UserSearchBase                  string   `json:"userSearchBase,omitempty"                  norman:"notnullable,required"`
+	UserSearchAttribute             string   `json:"userSearchAttribute,omitempty"             norman:"default=uid|sn|givenName,notnullable,required"`
+	UserSearchFilter                string   `json:"userSearchFilter,omitempty"`
+	UserLoginAttribute              string   `json:"userLoginAttribute,omitempty"              norman:"default=uid,notnullable,required"`
+	UserObjectClass                 string   `json:"userObjectClass,omitempty"                 norman:"default=inetOrgPerson,notnullable,required"`
+	UserNameAttribute               string   `json:"userNameAttribute,omitempty"               norman:"default=cn,notnullable,required"`
+	UserMemberAttribute             string   `json:"userMemberAttribute,omitempty"             norman:"default=memberOf,notnullable,required"`
+	UserEnabledAttribute            string   `json:"userEnabledAttribute,omitempty"`
+	GroupSearchBase                 string   `json:"groupSearchBase,omitempty"`
+	GroupSearchAttribute            string   `json:"groupSearchAttribute,omitempty"            norman:"default=cn,notnullable,required"`
+	GroupSearchFilter               string   `json:"groupSearchFilter,omitempty"`
+	GroupObjectClass                string   `json:"groupObjectClass,omitempty"                norman:"default=groupOfNames,notnullable,required"`
+	GroupNameAttribute              string   `json:"groupNameAttribute,omitempty"              norman:"default=cn,notnullable,required"`
+	GroupDNAttribute                string   `json:"groupDNAttribute,omitempty"                norman:"default=entryDN,notnullable"`
+	GroupMemberUserAttribute        string   `json:"groupMemberUserAttribute,omitempty"        norman:"default=entryDN,notnullable"`
+	GroupMemberMappingAttribute     string   `json:"groupMemberMappingAttribute,omitempty"     norman:"default=member,notnullable,required"`
+	ConnectionTimeout               int64    `json:"connectionTimeout,omitempty"               norman:"default=5000,notnullable,required"`
+	NestedGroupMembershipEnabled    bool     `json:"nestedGroupMembershipEnabled"              norman:"default=false"`
+}
+
 type LdapConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	AuthConfig        `json:",inline" mapstructure:",squash"`
-
-	Servers                         []string `json:"servers,omitempty"                     norman:"type=array[string],notnullable,required"`
-	Port                            int64    `json:"port,omitempty"                        norman:"default=389,notnullable,required"`
-	TLS                             bool     `json:"tls,omitempty"                         norman:"default=false,notnullable,required"`
-	Certificate                     string   `json:"certificate,omitempty"`
-	ServiceAccountDistinguishedName string   `json:"serviceAccountDistinguishedName,omitempty"      norman:"required"`
-	ServiceAccountPassword          string   `json:"serviceAccountPassword,omitempty"      norman:"type=password,required"`
-	UserDisabledBitMask             int64    `json:"userDisabledBitMask,omitempty"`
-	UserSearchBase                  string   `json:"userSearchBase,omitempty"              norman:"notnullable,required"`
-	UserSearchAttribute             string   `json:"userSearchAttribute,omitempty"         norman:"default=uid|sn|givenName,notnullable,required"`
-	UserLoginAttribute              string   `json:"userLoginAttribute,omitempty"          norman:"default=uid,notnullable,required"`
-	UserObjectClass                 string   `json:"userObjectClass,omitempty"             norman:"default=inetOrgPerson,notnullable,required"`
-	UserNameAttribute               string   `json:"userNameAttribute,omitempty"           norman:"default=cn,notnullable,required"`
-	UserMemberAttribute             string   `json:"userMemberAttribute,omitempty"           norman:"default=memberOf,notnullable,required"`
-	UserEnabledAttribute            string   `json:"userEnabledAttribute,omitempty"`
-	GroupSearchBase                 string   `json:"groupSearchBase,omitempty"`
-	GroupSearchAttribute            string   `json:"groupSearchAttribute,omitempty"        norman:"default=cn,notnullable,required"`
-	GroupObjectClass                string   `json:"groupObjectClass,omitempty"            norman:"default=groupOfNames,notnullable,required"`
-	GroupNameAttribute              string   `json:"groupNameAttribute,omitempty"          norman:"default=cn,notnullable,required"`
-	GroupDNAttribute                string   `json:"groupDNAttribute,omitempty"            norman:"default=entryDN,notnullable"`
-	GroupMemberUserAttribute        string   `json:"groupMemberUserAttribute,omitempty"    norman:"default=entryDN,notnullable"`
-	GroupMemberMappingAttribute     string   `json:"groupMemberMappingAttribute,omitempty" norman:"default=member,notnullable,required"`
-	ConnectionTimeout               int64    `json:"connectionTimeout,omitempty"           norman:"default=5000,notnullable,required"`
-	NestedGroupMembershipEnabled    bool     `json:"nestedGroupMembershipEnabled"    norman:"default=false"`
+	LdapFields        `json:",inline" mapstructure:",squash"`
 }
 
 type LdapTestAndApplyInput struct {
@@ -306,4 +350,17 @@ type ADFSConfig struct {
 
 type KeyCloakConfig struct {
 	SamlConfig `json:",inline" mapstructure:",squash"`
+}
+
+type OKTAConfig struct {
+	SamlConfig `json:",inline" mapstructure:",squash"`
+}
+
+type ShibbolethConfig struct {
+	SamlConfig     `json:",inline" mapstructure:",squash"`
+	OpenLdapConfig LdapFields `json:"openLdapConfig" mapstructure:",squash"`
+}
+
+type AuthSystemImages struct {
+	KubeAPIAuth string `json:"kubeAPIAuth,omitempty"`
 }
