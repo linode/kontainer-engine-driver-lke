@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"sync"
 
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/sirupsen/logrus"
 )
-
-var wg = &sync.WaitGroup{}
 
 func main() {
 	if os.Args[1] == "" {
@@ -28,6 +25,5 @@ func main() {
 
 	logrus.Infof("gke driver 2 up and running on at %v", <-addr)
 
-	wg.Add(1)
-	wg.Wait() // wait forever, we only exit if killed by parent process
+	select {} // wait forever, we only exit if killed by parent process
 }

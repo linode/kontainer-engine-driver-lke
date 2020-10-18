@@ -3,13 +3,14 @@ module github.com/linode/kontainer-engine-driver-linode
 go 1.15
 
 require (
+	github.com/linode/linodego v0.21.2
+	github.com/linode/linodego/k8s v0.0.0-20201007210559-5fa0a6ce0187
 	github.com/rancher/kontainer-engine v0.0.4-dev.0.20201016211542-bb3014a09ff1
-	github.com/rancher/rke v1.2.1
+	github.com/rancher/rke v1.2.1 // indirect
 	github.com/sirupsen/logrus v1.4.2
 	golang.org/x/net v0.0.0-20201016165138-7b1cca2348c0 // indirect
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
-	google.golang.org/api v0.14.0
-	k8s.io/client-go v12.0.0+incompatible
+	k8s.io/apimachinery v0.18.9
 )
 
 replace bitbucket.org/ww/goautoneg => gomodules.xyz/goautoneg v0.0.0-20120707110453-a547fc61f48d
