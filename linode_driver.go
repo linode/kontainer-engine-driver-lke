@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"golang.org/x/oauth2"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // DefaultLinodeURL is the Linode APIv4 URL to use
@@ -378,27 +380,43 @@ func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types
 		return nil, err
 	}
 
-	//cluster, err := client.GetLKECluster(context.Background(), clusterID)
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to get LKE cluster %d: %s", clusterID, err)
-	//}
-
-	kubeconfig, err := client.GetLKEClusterKubeconfig(context.Background(), clusterID)
+	lkeKubeconfig, err := client.GetLKEClusterKubeconfig(context.Background(), clusterID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kubeconfig for LKE cluster %d: %s", clusterID, err)
 	}
 
-	//info.Version = cluster.K8sVersion
-	//info.NodeCount = cluster.CurrentNodeCount
+	kubeConfigBytes, err := base64.StdEncoding.DecodeString(lkeKubeconfig.KubeConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode kubeconfig: %s", err)
+	}
 
-	// info.Endpoint = kubeconfig.KubeConfig..Endpoint
-	//info.Username = cluster.MasterAuth.Username
-	//info.Password = cluster.MasterAuth.Password
-	//info.RootCaCertificate = cluster.MasterAuth.ClusterCaCertificate
-	//info.ClientCertificate = cluster.MasterAuth.ClientCertificate
-	//info.ClientKey = cluster.MasterAuth.ClientKey
-	info.Metadata["KubeConfig"] = kubeconfig.KubeConfig
-	serviceAccountToken, err := generateServiceAccountTokenForGke(kubeconfig)
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeConfigBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse LKE cluster kubeconfig: %s", err)
+	}
+
+	info.Version = state.K8sVersion
+	count := 0
+	for _, poolSize := range state.NodePools {
+		count += poolSize
+	}
+	info.NodeCount = int64(count)
+
+	info.Endpoint = cfg.Host
+	info.Username = cfg.Username
+	info.Password = cfg.Password
+	if len(cfg.CAData) > 0 {
+		info.RootCaCertificate = string(cfg.CAData)
+	}
+	if len(cfg.CertData) > 0 {
+		info.ClientCertificate = string(cfg.CertData)
+	}
+	if len(cfg.KeyData) > 0 {
+		info.ClientKey = string(cfg.KeyData)
+	}
+
+	info.Metadata["KubeConfig"] = lkeKubeconfig.KubeConfig
+	serviceAccountToken, err := generateServiceAccountTokenForGke(lkeKubeconfig)
 	if err != nil {
 		return nil, err
 	}
