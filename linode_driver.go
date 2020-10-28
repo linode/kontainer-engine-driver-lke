@@ -34,13 +34,9 @@ type Driver struct {
 
 type state struct {
 	AccessToken string
-	APIURL      string
-	APIVersion  string
 
 	// The name of this cluster
 	Name string
-	// The displayed name of the cluster
-	DisplayName string
 	// An optional description of this cluster
 	Description string
 
@@ -81,22 +77,10 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 		Type:  types.StringType,
 		Usage: "Linode api access token",
 	}
-	driverFlag.Options["api-url"] = &types.Flag{
-		Type:  types.StringType,
-		Usage: "Linode api URL",
-	}
-	driverFlag.Options["api-version"] = &types.Flag{
-		Type:  types.StringType,
-		Usage: "Linode api version",
-	}
 
 	driverFlag.Options["name"] = &types.Flag{
 		Type:  types.StringType,
 		Usage: "the internal name of the cluster in Rancher",
-	}
-	driverFlag.Options["display-name"] = &types.Flag{
-		Type:  types.StringType,
-		Usage: "the name of the cluster that should be displayed to the user",
 	}
 	driverFlag.Options["description"] = &types.Flag{
 		Type:  types.StringType,
@@ -152,12 +136,9 @@ func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 	}
 
 	d.Name = options.GetValueFromDriverOptions(driverOptions, types.StringType, "name").(string)
-	d.DisplayName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "display-name", "displayName").(string)
 	d.Description = options.GetValueFromDriverOptions(driverOptions, types.StringType, "description").(string)
 
 	d.AccessToken = options.GetValueFromDriverOptions(driverOptions, types.StringType, "access-token", "accessToken").(string)
-	d.APIURL = options.GetValueFromDriverOptions(driverOptions, types.StringType, "api-url", "apiURL").(string)
-	d.APIVersion = options.GetValueFromDriverOptions(driverOptions, types.StringType, "api-version", "apiVersion").(string)
 
 	d.Region = options.GetValueFromDriverOptions(driverOptions, types.StringType, "region").(string)
 	d.K8sVersion = options.GetValueFromDriverOptions(driverOptions, types.StringType, "kubernetes-version", "kubernetesVersion").(string)
@@ -202,6 +183,8 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 		return nil, err
 	}
 
+	logrus.Debugf("state.name %s, state: %#v", state.Name, state)
+
 	info := &types.ClusterInfo{}
 	err = storeState(info, state)
 	if err != nil {
@@ -213,7 +196,10 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 		return info, err
 	}
 
-	cluster, err := client.CreateLKECluster(context.Background(), d.generateClusterCreateRequest(state))
+	req := d.generateClusterCreateRequest(state)
+	logrus.Debugf("LKE api request: %#v", req)
+
+	cluster, err := client.CreateLKECluster(context.Background(), req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create LKE cluster: %s", err)
 	}
@@ -254,6 +240,8 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 	if err != nil {
 		return nil, err
 	}
+
+	logrus.Debugf("state.name %s, state: %#v", state.Name, state)
 
 	newState, err := getStateFromOpts(opts)
 	if err != nil {
@@ -467,14 +455,7 @@ func (d *Driver) getServiceClient(ctx context.Context, state state) (*raw.Client
 	client := raw.NewClient(oauth2Client)
 
 	client.SetUserAgent("kontainer-engine-driver-linode")
-
-	if state.APIURL != "" {
-		client.SetBaseURL(state.APIURL)
-	} else if len(state.APIVersion) > 0 {
-		client.SetAPIVersion(state.APIVersion)
-	} else {
-		client.SetBaseURL(DefaultLinodeURL)
-	}
+	client.SetBaseURL(DefaultLinodeURL)
 
 	return &client, nil
 }
