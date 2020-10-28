@@ -279,6 +279,7 @@ k8s.io/apiserver/pkg/apis/audit
 k8s.io/apiserver/pkg/apis/audit/v1
 k8s.io/apiserver/pkg/apis/config
 # k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.18.9
+## explicit
 k8s.io/client-go/discovery
 k8s.io/client-go/kubernetes
 k8s.io/client-go/kubernetes/scheme
