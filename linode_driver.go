@@ -424,13 +424,13 @@ func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types
 	info.Username = cfg.Username
 	info.Password = cfg.Password
 	if len(cfg.CAData) > 0 {
-		info.RootCaCertificate = string(cfg.CAData)
+		info.RootCaCertificate = base64.StdEncoding.EncodeToString(cfg.CAData)
 	}
 	if len(cfg.CertData) > 0 {
-		info.ClientCertificate = string(cfg.CertData)
+		info.ClientCertificate = base64.StdEncoding.EncodeToString(cfg.CertData)
 	}
 	if len(cfg.KeyData) > 0 {
-		info.ClientKey = string(cfg.KeyData)
+		info.ClientKey = base64.StdEncoding.EncodeToString(cfg.KeyData)
 	}
 
 	info.Metadata["KubeConfig"] = lkeKubeconfig.KubeConfig
