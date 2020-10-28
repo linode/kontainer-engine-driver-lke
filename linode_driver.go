@@ -39,7 +39,8 @@ type state struct {
 	AccessToken string
 
 	// The name of this cluster
-	Name string
+	Name  string
+	Label string
 	// An optional description of this cluster
 	Description string
 
@@ -84,6 +85,10 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 	driverFlag.Options["name"] = &types.Flag{
 		Type:  types.StringType,
 		Usage: "the internal name of the cluster in Rancher",
+	}
+	driverFlag.Options["label"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "the label of the cluster in Linode",
 	}
 	driverFlag.Options["description"] = &types.Flag{
 		Type:  types.StringType,
@@ -139,6 +144,7 @@ func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 	}
 
 	d.Name = options.GetValueFromDriverOptions(driverOptions, types.StringType, "name").(string)
+	d.Label = options.GetValueFromDriverOptions(driverOptions, types.StringType, "label").(string)
 	d.Description = options.GetValueFromDriverOptions(driverOptions, types.StringType, "description").(string)
 
 	d.AccessToken = options.GetValueFromDriverOptions(driverOptions, types.StringType, "access-token", "accessToken").(string)
@@ -274,7 +280,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 
 	if !sets.NewString(state.Tags...).Equal(sets.NewString(newState.Tags...)) {
 		_, err = client.UpdateLKECluster(context.Background(), clusterID, raw.LKEClusterUpdateOptions{
-			Label: state.Name,
+			Label: state.Label,
 			Tags:  &newState.Tags,
 		})
 		if err != nil {
@@ -344,7 +350,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 
 func (d *Driver) generateClusterCreateRequest(state state) raw.LKEClusterCreateOptions {
 	req := raw.LKEClusterCreateOptions{
-		Label:      state.Name,
+		Label:      state.Label,
 		Region:     state.Region,
 		K8sVersion: state.K8sVersion,
 		Tags:       state.Tags,
