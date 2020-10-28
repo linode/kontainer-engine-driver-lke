@@ -29,15 +29,8 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v1
 
-      - name: Build
-        env:
-          REPO: tigerworks
-          DOCKER_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          USERNAME: 1gtm
-        run: |
-          docker login --username ${USERNAME} --password ${DOCKER_TOKEN}
-          make
-          docker push $(cat dist/images)
+      - name: Package
+        run: make
 
       - name: Pre-release
         uses: softprops/action-gh-release@v1
