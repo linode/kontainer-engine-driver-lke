@@ -1,9 +1,8 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "*.*"
+  release:
+    types: [created, edited]
 
 jobs:
   build:
@@ -22,25 +21,30 @@ jobs:
       - name: Package
         run: make
 
-      - name: Pre-release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.event.ref, 'refs/tags/') && (contains(github.ref, '-alpha.') || contains(github.ref, '-beta.') || contains(github.ref, '-rc.'))
-        with:
-          prerelease: true
-          files: |
-            bin/kontainer-engine-driver-linode-darwin-amd64
-            bin/kontainer-engine-driver-linode-linux-amd64
-            bin/kontainer-engine-driver-linode-linux-arm64
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.event.ref, 'refs/tags/') && (contains(github.ref, '-alpha.') || contains(github.ref, '-beta.') || contains(github.ref, '-rc.')) == false
         with:
-          files: |
-            bin/kontainer-engine-driver-linode-darwin-amd64
-            bin/kontainer-engine-driver-linode-linux-amd64
-            bin/kontainer-engine-driver-linode-linux-arm64
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./bin/kontainer-engine-driver-linode-darwin-amd64
+          asset_name: kontainer-engine-driver-linode-darwin-amd64
+          asset_content_type: application/octet-stream
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./bin/kontainer-engine-driver-linode-linux-amd64
+          asset_name: kontainer-engine-driver-linode-linux-amd64
+          asset_content_type: application/octet-stream
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./bin/kontainer-engine-driver-linode-linux-arm64
+          asset_name: kontainer-engine-driver-linode-linux-arm64
+          asset_content_type: application/octet-stream
