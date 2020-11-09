@@ -6,7 +6,7 @@ on:
       - "*"
   push:
     branches:
-      - master
+      - main
 
 jobs:
   build:
@@ -18,16 +18,6 @@ jobs:
         with:
           go-version: 1.15
         id: go
-
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: crazy-max/ghaction-docker-buildx@v1
-        with:
-          buildx-version: latest
-          qemu-version: latest
-
-      - name: Available platforms
-        run: echo ${{ steps.buildx.outputs.platforms }}
 
       - name: Check out code into the Go module directory
         uses: actions/checkout@v1
