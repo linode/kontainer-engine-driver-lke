@@ -1,4 +1,4 @@
-module github.com/linode/kontainer-engine-driver-linode
+module github.com/linode/kontainer-engine-driver-lke
 
 go 1.15
 
