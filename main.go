@@ -23,7 +23,7 @@ func main() {
 	addr := make(chan string)
 	go types.NewServer(&Driver{}, addr).ServeOrDie(fmt.Sprintf("127.0.0.1:%v", port))
 
-	logrus.Infof("gke driver 2 up and running on at %v", <-addr)
+	logrus.Infof("lke driver 2 up and running on at %v", <-addr)
 
 	select {} // wait forever, we only exit if killed by parent process
 }

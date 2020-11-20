@@ -5,10 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,7 +27,7 @@ import (
 const DefaultLinodeURL = "https://api.linode.com/v4"
 const retryInterval = 5 * time.Second
 
-// Driver defines the struct of gke driver
+// Driver defines the struct of lke driver
 type Driver struct {
 	driverCapabilities types.Capabilities
 }
@@ -126,6 +123,11 @@ func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags
 	driverFlag.Options["tags"] = &types.Flag{
 		Type:  types.StringSliceType,
 		Usage: "The map of Kubernetes labels (key/value pairs) to be applied to each node",
+		Default: &types.Default{
+			DefaultStringSlice: &types.StringSlice{
+				Value: []string{},
+			},
+		},
 	}
 	driverFlag.Options["node-pools"] = &types.Flag{
 		Type:  types.StringSliceType,
@@ -137,6 +139,7 @@ func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags
 // SetDriverOptions implements driver interface
 func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 	d := state{
+		Tags:      []string{},
 		NodePools: map[string]int{},
 		ClusterInfo: types.ClusterInfo{
 			Metadata: map[string]string{},
@@ -185,15 +188,6 @@ func (s *state) validate() error {
 	return nil
 }
 
-var lkeLog = filepath.Join("/tmp", "kontainer-engine-driver-linode", "test_logs.txt")
-
-func init() {
-	err := os.MkdirAll(filepath.Dir(lkeLog), 0755)
-	if err != nil {
-		panic(err)
-	}
-}
-
 // Create implements driver interface
 func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types.ClusterInfo) (*types.ClusterInfo, error) {
 	state, err := getStateFromOpts(opts)
@@ -202,7 +196,6 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 	}
 
 	logrus.Debugf("state.name %s, state: %#v", state.Name, state)
-	ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("state.name %s, state: %#v\n", state.Name, state)), 0644)
 
 	info := &types.ClusterInfo{}
 	err = storeState(info, state)
@@ -217,7 +210,6 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 
 	req := d.generateClusterCreateRequest(state)
 	logrus.Debugf("LKE api request: %#v", req)
-	ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("LKE api request: %#v", req)), 0644)
 
 	cluster, err := client.CreateLKECluster(context.Background(), req)
 	if err != nil {
@@ -268,6 +260,8 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 		return nil, err
 	}
 
+	state.AccessToken = newState.AccessToken
+
 	client, err := d.getServiceClient(ctx, state)
 	if err != nil {
 		return nil, err
@@ -278,9 +272,9 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 		return nil, fmt.Errorf("failed to parse cluster id: %s", err)
 	}
 
-	if !sets.NewString(state.Tags...).Equal(sets.NewString(newState.Tags...)) {
+	if state.Label != newState.Label || !sets.NewString(state.Tags...).Equal(sets.NewString(newState.Tags...)) {
 		_, err = client.UpdateLKECluster(context.Background(), clusterID, raw.LKEClusterUpdateOptions{
-			Label: state.Label,
+			Label: newState.Label,
 			Tags:  &newState.Tags,
 		})
 		if err != nil {
@@ -365,51 +359,56 @@ func (d *Driver) generateClusterCreateRequest(state state) raw.LKEClusterCreateO
 	return req
 }
 
+func exists(m map[string]string, key string) bool {
+	if m == nil {
+		return false
+	}
+	_, ok := m[key]
+	return ok
+}
+
 func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types.ClusterInfo, error) {
 	state, err := getState(info)
 	if err != nil {
-		ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L364:: err: %s", err)), 0644)
-		return nil, err
-	}
-	ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L366:: state: %#v", state)), 0644)
-
-	client, err := d.getServiceClient(ctx, state)
-	if err != nil {
-		ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L371:: err: %s", err)), 0644)
 		return nil, err
 	}
 
-	clusterID, err := strconv.Atoi(info.Metadata["cluster-id"])
-	if err != nil {
-		ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L377:: err: %s", err)), 0644)
-		return nil, fmt.Errorf("failed to parse cluster id: %s", err)
-	}
-	ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L380:: cluster-id: %#v", clusterID)), 0644)
+	var kubeconfig string
+	if exists(info.Metadata, "KubeConfig") {
+		kubeconfig = info.Metadata["KubeConfig"]
+	} else {
+		// Only load Kubeconfig during first run
+		client, err := d.getServiceClient(ctx, state)
+		if err != nil {
+			return nil, err
+		}
 
-	err = client.WaitForLKEClusterConditions(context.Background(), clusterID, raw.LKEClusterPollOptions{
-		TimeoutSeconds: 10 * 60,
-	}, k8scondition.ClusterHasReadyNode)
-	if err != nil {
-		ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L386:: err: %s", err)), 0644)
-		return nil, err
-	}
-	ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L389:: cluster-id: %#v", clusterID)), 0644)
+		clusterID, err := strconv.Atoi(info.Metadata["cluster-id"])
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse cluster id: %s", err)
+		}
 
-	lkeKubeconfig, err := client.GetLKEClusterKubeconfig(context.Background(), clusterID)
-	if err != nil {
-		ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L393:: err: %s", err)), 0644)
-		return nil, fmt.Errorf("failed to get kubeconfig for LKE cluster %d: %s", clusterID, err)
+		err = client.WaitForLKEClusterConditions(context.Background(), clusterID, raw.LKEClusterPollOptions{
+			TimeoutSeconds: 10 * 60,
+		}, k8scondition.ClusterHasReadyNode)
+		if err != nil {
+			return nil, err
+		}
+
+		lkeKubeconfig, err := client.GetLKEClusterKubeconfig(context.Background(), clusterID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get kubeconfig for LKE cluster %d: %s", clusterID, err)
+		}
+		kubeconfig = lkeKubeconfig.KubeConfig
 	}
 
-	kubeConfigBytes, err := base64.StdEncoding.DecodeString(lkeKubeconfig.KubeConfig)
+	kubeConfigBytes, err := base64.StdEncoding.DecodeString(kubeconfig)
 	if err != nil {
-		ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L399:: err: %s", err)), 0644)
 		return nil, fmt.Errorf("failed to decode kubeconfig: %s", err)
 	}
 
 	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeConfigBytes)
 	if err != nil {
-		ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L405:: err: %s", err)), 0644)
 		return nil, fmt.Errorf("failed to parse LKE cluster kubeconfig: %s", err)
 	}
 
@@ -433,14 +432,12 @@ func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types
 		info.ClientKey = base64.StdEncoding.EncodeToString(cfg.KeyData)
 	}
 
-	info.Metadata["KubeConfig"] = lkeKubeconfig.KubeConfig
-	serviceAccountToken, err := generateServiceAccountTokenForLKE(lkeKubeconfig)
+	info.Metadata["KubeConfig"] = kubeconfig
+	serviceAccountToken, err := generateServiceAccountTokenForLKE(kubeconfig)
 	if err != nil {
-		ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L432:: err: %s", err)), 0644)
 		return nil, err
 	}
 	info.ServiceAccountToken = serviceAccountToken
-	ioutil.WriteFile(lkeLog, []byte(fmt.Sprintf("L437:: ServiceAccountToken: %s", serviceAccountToken)), 0644)
 	return info, nil
 }
 
@@ -492,8 +489,10 @@ func (d *Driver) getServiceClient(ctx context.Context, state state) (*raw.Client
 	return &client, nil
 }
 
-func generateServiceAccountTokenForLKE(lkeKubeconfig *raw.LKEClusterKubeconfig) (string, error) {
-	clientset, err := k8s.BuildClientsetFromConfig(lkeKubeconfig, nil)
+func generateServiceAccountTokenForLKE(kubeconfig string) (string, error) {
+	clientset, err := k8s.BuildClientsetFromConfig(&raw.LKEClusterKubeconfig{
+		KubeConfig: kubeconfig,
+	}, nil)
 	if err != nil {
 		return "", err
 	}
