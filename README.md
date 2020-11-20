@@ -1,7 +1,7 @@
-Kontainer Engine Linode Driver
+Kontainer Engine LKE Driver
 ===============================
 
-This is the Kontainer-Engine Linode Driver. It is used in conjunction with the [ui-cluster-driver-linode.](https://github.com/linode/ui-cluster-driver-linode)
+This is the Kontainer-Engine Linode Driver. It is used in conjunction with the [ui-cluster-driver-linode.](https://github.com/linode/ui-cluster-driver-lke)
 
 ### Packaging and distributing
 
@@ -21,7 +21,7 @@ release and can be downloaded from one of those URLs directly.
 
 Go to the `Cluster Drivers` management screen in Rancher and click 
 `Add Cluster Driver`. Enter the URL of your driver, a UI URL (see the UI 
-[ui-cluster-driver-linode](https://github.com/linode/ui-cluster-driver-linode) for details), and a 
+[ui-cluster-driver-lke](https://github.com/linode/ui-cluster-driver-lke) for details), and a 
 checksum (optional), and click `Create`. Rancher will automatically download 
 and install your driver. It will then become available to use on the 
 `Add Cluster` screen.
