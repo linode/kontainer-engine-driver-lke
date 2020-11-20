@@ -1,7 +1,7 @@
 Kontainer Engine LKE Driver
 ===============================
 
-This is the Kontainer-Engine Linode Driver. It is used in conjunction with the [ui-cluster-driver-linode.](https://github.com/linode/ui-cluster-driver-lke)
+This is the Kontainer-Engine Linode Driver. It is used in conjunction with the [ui-cluster-driver-lke.](https://github.com/linode/ui-cluster-driver-lke)
 
 ### Packaging and distributing
 
