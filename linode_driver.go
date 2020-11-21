@@ -483,7 +483,7 @@ func (d *Driver) getServiceClient(ctx context.Context, state state) (*raw.Client
 	}
 	client := raw.NewClient(oauth2Client)
 
-	client.SetUserAgent("kontainer-engine-driver-linode")
+	client.SetUserAgent("kontainer-engine-driver-lke")
 	client.SetBaseURL(DefaultLinodeURL)
 
 	return &client, nil

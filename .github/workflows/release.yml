@@ -27,8 +27,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./bin/kontainer-engine-driver-linode-darwin-amd64
-          asset_name: kontainer-engine-driver-linode-darwin-amd64
+          asset_path: ./bin/kontainer-engine-driver-lke-darwin-amd64
+          asset_name: kontainer-engine-driver-lke-darwin-amd64
           asset_content_type: application/octet-stream
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
@@ -36,8 +36,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./bin/kontainer-engine-driver-linode-linux-amd64
-          asset_name: kontainer-engine-driver-linode-linux-amd64
+          asset_path: ./bin/kontainer-engine-driver-lke-linux-amd64
+          asset_name: kontainer-engine-driver-lke-linux-amd64
           asset_content_type: application/octet-stream
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
@@ -45,6 +45,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./bin/kontainer-engine-driver-linode-linux-arm64
-          asset_name: kontainer-engine-driver-linode-linux-arm64
+          asset_path: ./bin/kontainer-engine-driver-lke-linux-arm64
+          asset_name: kontainer-engine-driver-lke-linux-arm64
           asset_content_type: application/octet-stream

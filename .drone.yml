@@ -23,7 +23,7 @@ steps:
       checksum:
         - sha256
       files:
-        - "bin/kontainer-engine-driver-linode-*"
+        - "bin/kontainer-engine-driver-lke-*"
       api_key:
         from_secret: github_token
     when:
@@ -42,7 +42,7 @@ steps:
       checksum:
         - sha256
       files:
-        - "bin/kontainer-engine-driver-linode-*"
+        - "bin/kontainer-engine-driver-lke-*"
       prerelease: true
       api_key:
         from_secret: github_token
