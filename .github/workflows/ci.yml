@@ -23,5 +23,7 @@ jobs:
         uses: actions/checkout@v1
 
       - name: Run checks
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: |
           make
