@@ -203,7 +203,7 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 		return info, err
 	}
 
-	client, err := d.getServiceClient(ctx, state)
+	client, err := d.getServiceClient(ctx, state.AccessToken)
 	if err != nil {
 		return info, err
 	}
@@ -262,7 +262,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 
 	state.AccessToken = newState.AccessToken
 
-	client, err := d.getServiceClient(ctx, state)
+	client, err := d.getServiceClient(ctx, state.AccessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types
 		kubeconfig = info.Metadata["KubeConfig"]
 	} else {
 		// Only load Kubeconfig during first run
-		client, err := d.getServiceClient(ctx, state)
+		client, err := d.getServiceClient(ctx, state.AccessToken)
 		if err != nil {
 			return nil, err
 		}
@@ -448,7 +448,7 @@ func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 		return err
 	}
 
-	client, err := d.getServiceClient(ctx, state)
+	client, err := d.getServiceClient(ctx, state.AccessToken)
 	if err != nil {
 		return err
 	}
@@ -466,14 +466,17 @@ func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 	}
 	_, err = client.WaitForLKEClusterStatus(context.Background(), clusterID, "not_ready", 10*60)
 	if err != nil {
+		if le, ok := err.(*raw.Error); ok && le.Code == http.StatusNotFound {
+			return nil
+		}
 		return err
 	}
 
 	return nil
 }
 
-func (d *Driver) getServiceClient(ctx context.Context, state state) (*raw.Client, error) {
-	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: state.AccessToken})
+func (d *Driver) getServiceClient(ctx context.Context, token string) (*raw.Client, error) {
+	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	oauthTransport := &oauth2.Transport{
 		Source: tokenSource,
 	}
@@ -511,7 +514,7 @@ func (d *Driver) GetClusterSize(ctx context.Context, info *types.ClusterInfo) (*
 		return nil, fmt.Errorf("failed to parse cluster id: %s", err)
 	}
 
-	client, err := d.getServiceClient(ctx, state)
+	client, err := d.getServiceClient(ctx, state.AccessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -539,7 +542,7 @@ func (d *Driver) GetVersion(ctx context.Context, info *types.ClusterInfo) (*type
 		return nil, fmt.Errorf("failed to parse cluster id: %s", err)
 	}
 
-	client, err := d.getServiceClient(ctx, state)
+	client, err := d.getServiceClient(ctx, state.AccessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +565,7 @@ func (d *Driver) SetClusterSize(ctx context.Context, info *types.ClusterInfo, co
 		return fmt.Errorf("failed to parse cluster id: %s", err)
 	}
 
-	client, err := d.getServiceClient(ctx, state)
+	client, err := d.getServiceClient(ctx, state.AccessToken)
 	if err != nil {
 		return err
 	}
