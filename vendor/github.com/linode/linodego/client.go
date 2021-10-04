@@ -32,13 +32,9 @@ const (
 	APISecondsPerPoll = 3
 	// Maximum wait time for retries
 	APIRetryMaxWaitTime = time.Duration(30) * time.Second
-	// DefaultUserAgent is the default User-Agent sent in HTTP request headers
-	DefaultUserAgent = "linodego https://github.com/linode/linodego"
 )
 
-var (
-	envDebug = false
-)
+var envDebug = false
 
 // Client is a wrapper around the Resty client
 type Client struct {
@@ -100,7 +96,9 @@ type Client struct {
 	Token                    *Resource
 	Tokens                   *Resource
 	Types                    *Resource
+	UserGrants               *Resource
 	Users                    *Resource
+	VLANs                    *Resource
 	Volumes                  *Resource
 }
 
@@ -172,6 +170,7 @@ func (c *Client) SetRetries() *Client {
 		addRetryConditional(linodeBusyRetryCondition).
 		addRetryConditional(tooManyRequestsRetryCondition).
 		addRetryConditional(serviceUnavailableRetryCondition).
+		addRetryConditional(requestTimeoutRetryCondition).
 		SetRetryMaxWaitTime(APIRetryMaxWaitTime)
 	configureRetries(c)
 	return c
@@ -182,8 +181,28 @@ func (c *Client) addRetryConditional(retryConditional RetryConditional) *Client 
 	return c
 }
 
+// SetRetryMaxWaitTime sets the maximum delay before retrying a request.
 func (c *Client) SetRetryMaxWaitTime(max time.Duration) *Client {
 	c.resty.SetRetryMaxWaitTime(max)
+	return c
+}
+
+// SetRetryWaitTime sets the default (minimum) delay before retrying a request.
+func (c *Client) SetRetryWaitTime(min time.Duration) *Client {
+	c.resty.SetRetryWaitTime(min)
+	return c
+}
+
+// SetRetryAfter sets the callback function to be invoked with a failed request
+// to determine wben it should be retried.
+func (c *Client) SetRetryAfter(callback RetryAfter) *Client {
+	c.resty.SetRetryAfter(resty.RetryAfterFunc(callback))
+	return c
+}
+
+// SetRetryCount sets the maximum retry attempts before aborting.
+func (c *Client) SetRetryCount(count int) *Client {
+	c.resty.SetRetryCount(count)
 	return c
 }
 
@@ -191,7 +210,6 @@ func (c *Client) SetRetryMaxWaitTime(max time.Duration) *Client {
 // Affects all WaitFor* functions and retries.
 func (c *Client) SetPollDelay(delay time.Duration) *Client {
 	c.millisecondsPerPoll = delay
-	c.resty.SetRetryWaitTime(delay * time.Millisecond)
 	return c
 }
 
@@ -244,6 +262,7 @@ func NewClient(hc *http.Client) (client Client) {
 	}
 
 	client.
+		SetRetryWaitTime((1000 * APISecondsPerPoll) * time.Millisecond).
 		SetPollDelay(1000 * APISecondsPerPoll).
 		SetRetries().
 		SetDebug(envDebug)
@@ -305,7 +324,9 @@ func addResources(client *Client) {
 		ticketsName:                  NewResource(client, ticketsName, ticketsEndpoint, false, Ticket{}, TicketsPagedResponse{}),
 		tokensName:                   NewResource(client, tokensName, tokensEndpoint, false, Token{}, TokensPagedResponse{}),
 		typesName:                    NewResource(client, typesName, typesEndpoint, false, LinodeType{}, LinodeTypesPagedResponse{}),
+		userGrantsName:               NewResource(client, typesName, userGrantsEndpoint, true, UserGrants{}, nil),
 		usersName:                    NewResource(client, usersName, usersEndpoint, false, User{}, UsersPagedResponse{}),
+		vlansName:                    NewResource(client, vlansName, vlansEndpoint, false, VLAN{}, VLANsPagedResponse{}),
 		volumesName:                  NewResource(client, volumesName, volumesEndpoint, false, Volume{}, VolumesPagedResponse{}),
 	}
 
@@ -357,7 +378,9 @@ func addResources(client *Client) {
 	client.Tickets = resources[ticketsName]
 	client.Tokens = resources[tokensName]
 	client.Types = resources[typesName]
+	client.UserGrants = resources[userGrantsName]
 	client.Users = resources[usersName]
+	client.VLANs = resources[vlansName]
 	client.Volumes = resources[volumesName]
 }
 
@@ -366,7 +389,7 @@ func copyBool(bPtr *bool) *bool {
 		return nil
 	}
 
-	var t = *bPtr
+	t := *bPtr
 
 	return &t
 }
@@ -376,7 +399,7 @@ func copyInt(iPtr *int) *int {
 		return nil
 	}
 
-	var t = *iPtr
+	t := *iPtr
 
 	return &t
 }
@@ -386,7 +409,7 @@ func copyString(sPtr *string) *string {
 		return nil
 	}
 
-	var t = *sPtr
+	t := *sPtr
 
 	return &t
 }
@@ -396,7 +419,7 @@ func copyTime(tPtr *time.Time) *time.Time {
 		return nil
 	}
 
-	var t = *tPtr
+	t := *tPtr
 
 	return &t
 }

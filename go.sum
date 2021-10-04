@@ -254,6 +254,8 @@ github.com/google/go-cmp v0.3.1 h1:Xye71clBPdm5HgqGwUkwhbynsUJZhDbS20FvLhQ2izg=
 github.com/google/go-cmp v0.3.1/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=
 github.com/google/go-cmp v0.4.0 h1:xsAVV57WRhGj6kEIi8ReJzQlHHqcBYCElAvkovg3B/4=
 github.com/google/go-cmp v0.4.0/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
+github.com/google/go-cmp v0.5.6 h1:BKbKCqvP6I+rmFHt06ZmyQtvB8xAkWdhFyr0ZUNZcxQ=
+github.com/google/go-cmp v0.5.6/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/google/go-querystring v1.0.0/go.mod h1:odCYkC5MyYFN7vkCjXpyrEuKhc/BUO6wN/zVPAxq5ck=
 github.com/google/gofuzz v1.0.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/gofuzz v1.1.0 h1:Hsa8mG0dQ46ij8Sl2AYJDUv1oA9/d6Vk+3LG99Oe02g=
@@ -372,6 +374,8 @@ github.com/lightstep/lightstep-tracer-go v0.18.0/go.mod h1:jlF1pusYV4pidLvZ+XD0U
 github.com/linode/linodego v0.20.1/go.mod h1:XOWXRHjqeU2uPS84tKLgfWIfTlv3TYzCS0io4GOQzEI=
 github.com/linode/linodego v0.21.2 h1:/78bNl10ST/doO+6ET0UrXB3uAGEHSpPxXV7GUxVetI=
 github.com/linode/linodego v0.21.2/go.mod h1:UTpq1JUZD0CZsJ8rt+0CRkqbzrp1MbGakVPt2DXY5Mk=
+github.com/linode/linodego v1.1.0 h1:ZiFVUptlzuExtUbHZtXiN7I0dAOFQAyirBKb/6/n9n4=
+github.com/linode/linodego v1.1.0/go.mod h1:x/7+BoaKd4unViBmS2umdjYyVAmpFtBtEXZ0wou7FYQ=
 github.com/linode/linodego/k8s v0.0.0-20201007210559-5fa0a6ce0187 h1:BD3B4omCTwJmYMXY8dOlmuDBDVAAMn8F+BabglL3HvU=
 github.com/linode/linodego/k8s v0.0.0-20201007210559-5fa0a6ce0187/go.mod h1:MWI0tFyaJqRpirMv0VO7CGYT4V3IhHvml2rs/DlRQmY=
 github.com/lithammer/dedent v1.1.0/go.mod h1:jrXYCQtgg0nJiN+StA2KgR7w6CiQNv9Fd/Z9BP0jIOc=

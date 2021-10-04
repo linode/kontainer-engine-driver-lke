@@ -59,8 +59,10 @@ const (
 	ticketsName                  = "tickets"
 	tokensName                   = "tokens"
 	typesName                    = "types"
+	userGrantsName               = "usergrants"
 	usersName                    = "users"
 	volumesName                  = "volumes"
+	vlansName                    = "vlans"
 
 	accountEndpoint                = "account"
 	accountSettingsEndpoint        = "account/settings"
@@ -115,7 +117,9 @@ const (
 	ticketsEndpoint                  = "support/tickets"
 	tokensEndpoint                   = "profile/tokens"
 	typesEndpoint                    = "linode/types"
+	userGrantsEndpoint               = "account/users/{{ .ID }}/grants"
 	usersEndpoint                    = "account/users"
+	vlansEndpoint                    = "networking/vlans"
 	volumesEndpoint                  = "volumes"
 )
 
