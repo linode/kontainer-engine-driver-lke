@@ -58,7 +58,7 @@ func TestDriver(t *testing.T) {
 	}
 	info, err := d.Create(context.TODO(), &opts, nil)
 	if err != nil {
- 		t.Fatal(err)
+		t.Fatal(err)
 	}
 
 	defer func() {
