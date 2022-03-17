@@ -6,7 +6,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"time"
 
@@ -46,31 +48,39 @@ type Client struct {
 
 	millisecondsPerPoll time.Duration
 
-	Account                  *Resource
-	AccountSettings          *Resource
-	DomainRecords            *Resource
-	Domains                  *Resource
-	Events                   *Resource
-	Firewalls                *Resource
-	FirewallDevices          *Resource
-	FirewallRules            *Resource
-	IPAddresses              *Resource
-	IPv6Pools                *Resource
-	IPv6Ranges               *Resource
-	Images                   *Resource
-	InstanceConfigs          *Resource
-	InstanceDisks            *Resource
-	InstanceIPs              *Resource
-	InstanceSnapshots        *Resource
-	InstanceStats            *Resource
-	InstanceVolumes          *Resource
-	Instances                *Resource
-	InvoiceItems             *Resource
-	Invoices                 *Resource
-	Kernels                  *Resource
-	LKEClusters              *Resource
-	LKEClusterAPIEndpoints   *Resource
-	LKEClusterPools          *Resource
+	baseURL    string
+	apiVersion string
+	apiProto   string
+
+	Account                *Resource
+	AccountSettings        *Resource
+	DomainRecords          *Resource
+	Domains                *Resource
+	Events                 *Resource
+	Firewalls              *Resource
+	FirewallDevices        *Resource
+	FirewallRules          *Resource
+	IPAddresses            *Resource
+	IPv6Pools              *Resource
+	IPv6Ranges             *Resource
+	Images                 *Resource
+	InstanceConfigs        *Resource
+	InstanceDisks          *Resource
+	InstanceIPs            *Resource
+	InstanceSnapshots      *Resource
+	InstanceStats          *Resource
+	InstanceVolumes        *Resource
+	Instances              *Resource
+	InvoiceItems           *Resource
+	Invoices               *Resource
+	Kernels                *Resource
+	LKEClusters            *Resource
+	LKEClusterAPIEndpoints *Resource
+
+	// Deprecated: Please use LKENodePools
+	LKEClusterPools *Resource
+
+	LKENodePools             *Resource
 	LKEVersions              *Resource
 	Longview                 *Resource
 	LongviewClients          *Resource
@@ -140,15 +150,44 @@ func (c *Client) SetDebug(debug bool) *Client {
 }
 
 // SetBaseURL sets the base URL of the Linode v4 API (https://api.linode.com/v4)
-func (c *Client) SetBaseURL(url string) *Client {
-	c.resty.SetHostURL(url)
+func (c *Client) SetBaseURL(baseURL string) *Client {
+	baseURLPath, _ := url.Parse(baseURL)
+
+	c.baseURL = path.Join(baseURLPath.Host, baseURLPath.Path)
+	c.apiProto = baseURLPath.Scheme
+
+	c.updateHostURL()
+
 	return c
 }
 
 // SetAPIVersion sets the version of the API to interface with
 func (c *Client) SetAPIVersion(apiVersion string) *Client {
-	c.SetBaseURL(fmt.Sprintf("%s://%s/%s", APIProto, APIHost, apiVersion))
+	c.apiVersion = apiVersion
+
+	c.updateHostURL()
+
 	return c
+}
+
+func (c *Client) updateHostURL() {
+	apiProto := APIProto
+	baseURL := APIHost
+	apiVersion := APIVersion
+
+	if c.baseURL != "" {
+		baseURL = c.baseURL
+	}
+
+	if c.apiVersion != "" {
+		apiVersion = c.apiVersion
+	}
+
+	if c.apiProto != "" {
+		apiProto = c.apiProto
+	}
+
+	c.resty.SetHostURL(fmt.Sprintf("%s://%s/%s", apiProto, baseURL, apiVersion))
 }
 
 // SetRootCertificate adds a root certificate to the underlying TLS client config
@@ -300,6 +339,7 @@ func addResources(client *Client) {
 		lkeClusterAPIEndpointsName:   NewResource(client, lkeClusterAPIEndpointsName, lkeClusterAPIEndpointsEndpoint, true, LKEClusterAPIEndpoint{}, LKEClusterAPIEndpointsPagedResponse{}),
 		lkeClustersName:              NewResource(client, lkeClustersName, lkeClustersEndpoint, false, LKECluster{}, LKEClustersPagedResponse{}),
 		lkeClusterPoolsName:          NewResource(client, lkeClusterPoolsName, lkeClusterPoolsEndpoint, true, LKEClusterPool{}, LKEClusterPoolsPagedResponse{}),
+		lkeNodePoolsName:             NewResource(client, lkeNodePoolsName, lkeNodePoolsEndpoint, true, LKENodePool{}, LKENodePoolsPagedResponse{}),
 		lkeVersionsName:              NewResource(client, lkeVersionsName, lkeVersionsEndpoint, false, LKEVersion{}, LKEVersionsPagedResponse{}),
 		longviewName:                 NewResource(client, longviewName, longviewEndpoint, false, nil, nil), // really?
 		longviewclientsName:          NewResource(client, longviewclientsName, longviewclientsEndpoint, false, LongviewClient{}, LongviewClientsPagedResponse{}),
@@ -355,6 +395,7 @@ func addResources(client *Client) {
 	client.LKEClusterAPIEndpoints = resources[lkeClusterAPIEndpointsName]
 	client.LKEClusters = resources[lkeClustersName]
 	client.LKEClusterPools = resources[lkeClusterPoolsName]
+	client.LKENodePools = resources[lkeNodePoolsName]
 	client.LKEVersions = resources[lkeVersionsName]
 	client.Longview = resources[longviewName]
 	client.LongviewSubscriptions = resources[longviewsubscriptionsName]
