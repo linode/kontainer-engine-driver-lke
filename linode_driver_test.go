@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	raw "github.com/linode/linodego"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
@@ -20,16 +22,25 @@ func TestDriver(t *testing.T) {
 	}
 
 	d := &Driver{}
-	//client, err := d.getServiceClient(context.TODO(), token)
-	//if err != nil {
-	//	t.Fatal(err)
-	//}
-	//
-	//lkeVersions, err := client.ListLKEVersions(context.TODO(), &raw.ListOptions{})
-	//if err != nil {
-	//	t.Fatal(err)
-	//}
-	kubernetesVersion := "1.22"
+	client, err := d.getServiceClient(context.TODO(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lkeVersions, err := client.ListLKEVersions(context.TODO(), &raw.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lkeVersionsStr := make([]string, len(lkeVersions))
+	for i, v := range lkeVersions {
+		lkeVersionsStr[i] = v.ID
+	}
+
+	sort.Strings(lkeVersionsStr)
+
+	// We should be testing on the latest version
+	kubernetesVersion := lkeVersionsStr[len(lkeVersionsStr)-1]
 
 	opts := types.DriverOptions{
 		BoolOptions: nil,
