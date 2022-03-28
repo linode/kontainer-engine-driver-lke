@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
+	raw "github.com/linode/linodego"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
-	raw "github.com/linode/linodego"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -30,7 +31,16 @@ func TestDriver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kubernetesVersion := lkeVersions[0].ID
+
+	lkeVersionsStr := make([]string, len(lkeVersions))
+	for i, v := range lkeVersions {
+		lkeVersionsStr[i] = v.ID
+	}
+
+	sort.Strings(lkeVersionsStr)
+
+	// We should be testing on the latest version
+	kubernetesVersion := lkeVersionsStr[len(lkeVersionsStr)-1]
 
 	opts := types.DriverOptions{
 		BoolOptions: nil,
@@ -56,36 +66,36 @@ func TestDriver(t *testing.T) {
 			},
 		},
 	}
-	info, err := d.Create(context.TODO(), &opts, nil)
+	info, err := d.Create(context.Background(), &opts, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	defer func() {
-		err = d.Remove(context.TODO(), info)
+		err = d.Remove(context.Background(), info)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}()
 
-	info, err = d.PostCheck(context.TODO(), info)
+	info, err = d.PostCheck(context.Background(), info)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	v, err := d.GetVersion(context.TODO(), info)
+	v, err := d.GetVersion(context.Background(), info)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, kubernetesVersion, v.Version, "Kubernetes version")
 
-	c, err := d.GetClusterSize(context.TODO(), info)
+	c, err := d.GetClusterSize(context.Background(), info)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, int64(2), c.Count, "Cluster size")
 
-	info, err = d.Update(context.TODO(), info, &types.DriverOptions{
+	info, err = d.Update(context.Background(), info, &types.DriverOptions{
 		StringOptions: map[string]string{
 			"name":               name,
 			"label":              name,
@@ -105,12 +115,12 @@ func TestDriver(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	info, err = d.PostCheck(context.TODO(), info)
+	info, err = d.PostCheck(context.Background(), info)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	uc, err := d.GetClusterSize(context.TODO(), info)
+	uc, err := d.GetClusterSize(context.Background(), info)
 	if err != nil {
 		t.Fatal(err)
 	}

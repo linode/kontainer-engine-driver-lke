@@ -45,6 +45,12 @@ type IPv6Range struct {
 	Range  string `json:"range"`
 	Region string `json:"region"`
 	Prefix int    `json:"prefix"`
+
+	RouteTarget string `json:"route_target"`
+
+	// These fields are only returned by GetIPv6Range(...)
+	IsBGP   bool  `json:"is_bgp"`
+	Linodes []int `json:"linodes"`
 }
 
 // InstanceIPType constants start with IPType and include Linode Instance IP Types
