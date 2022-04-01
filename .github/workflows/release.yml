@@ -19,6 +19,8 @@ jobs:
         uses: actions/checkout@v1
 
       - name: Package
+        env:
+          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
         run: make
 
       - name: Upload Release Asset
