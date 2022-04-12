@@ -155,20 +155,25 @@ func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 	d.K8sVersion = options.GetValueFromDriverOptions(driverOptions, types.StringType, "kubernetes-version", "kubernetesVersion").(string)
 
 	d.Tags = []string{}
-	tags := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "tags").(*types.StringSlice)
-	for _, tag := range tags.Value {
-		d.Tags = append(d.Tags, tag)
+	tags := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "tags")
+	if tags != nil {
+		tags := tags.(*types.StringSlice)
+		for _, tag := range tags.Value {
+			d.Tags = append(d.Tags, tag)
+		}
 	}
 
-	pools := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "node-pools", "nodePools").(*types.StringSlice)
-	for _, part := range pools.Value {
-		kv := strings.Split(part, "=")
-		if len(kv) == 2 {
-			count, err := strconv.Atoi(kv[1])
-			if err != nil {
-				return state{}, fmt.Errorf("failed to parse node count %v for pool of node type %s", kv[1], kv[0])
+	pools := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "node-pools", "nodePools")
+	if pools != nil {
+		for _, part := range pools.(*types.StringSlice).Value {
+			kv := strings.Split(part, "=")
+			if len(kv) == 2 {
+				count, err := strconv.Atoi(kv[1])
+				if err != nil {
+					return state{}, fmt.Errorf("failed to parse node count %v for pool of node type %s", kv[1], kv[0])
+				}
+				d.NodePools[kv[0]] = count
 			}
-			d.NodePools[kv[0]] = count
 		}
 	}
 
