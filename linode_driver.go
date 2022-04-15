@@ -25,6 +25,7 @@ import (
 // DefaultLinodeURL is the Linode APIv4 URL to use
 const DefaultLinodeURL = "https://api.linode.com"
 const retryInterval = 5 * time.Second
+const serviceAccountRetryTimeout = 5 * time.Minute
 
 // Driver defines the struct of lke driver
 type Driver struct {
@@ -221,10 +222,15 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 	}
 	info.Metadata["cluster-id"] = strconv.Itoa(cluster.ID)
 
-	client.WaitForLKEClusterConditions(ctx, cluster.ID, raw.LKEClusterPollOptions{
+	err = client.WaitForLKEClusterConditions(ctx, cluster.ID, raw.LKEClusterPollOptions{
+		Retry:          true,
 		TimeoutSeconds: 10 * 60,
 	}, k8scondition.ClusterHasReadyNode)
-	return info, nil
+	if err != nil {
+		return nil, fmt.Errorf("failed to wait for lke cluster ready node: %s", err)
+	}
+
+	return info, err
 }
 
 func storeState(info *types.ClusterInfo, state state) error {
@@ -284,16 +290,16 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 		state.Tags = newState.Tags
 	}
 
-	pools, err := client.ListLKEClusterPools(ctx, clusterID, nil)
+	pools, err := client.ListLKENodePools(ctx, clusterID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pools for LKE cluster %d: %s", clusterID, err)
 	}
 
-	pm := make(map[string]raw.LKEClusterPool) // type -> pool
+	pm := make(map[string]raw.LKENodePool) // type -> pool
 	for _, pool := range pools {
 		if _, found := newState.NodePools[pool.Type]; !found {
 			// delete
-			err = client.DeleteLKEClusterPool(ctx, clusterID, pool.ID)
+			err = client.DeleteLKENodePool(ctx, clusterID, pool.ID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to delete cluster %s node pool type %s", state.Name, pool.Type)
 			}
@@ -307,7 +313,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 		if cur, ok := pm[t]; ok {
 			if cur.Count != count {
 				// update
-				_, err = client.UpdateLKEClusterPool(ctx, clusterID, cur.ID, raw.LKEClusterPoolUpdateOptions{
+				_, err = client.UpdateLKENodePool(ctx, clusterID, cur.ID, raw.LKENodePoolUpdateOptions{
 					Count: count,
 				})
 				if err != nil {
@@ -317,7 +323,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 			}
 		} else {
 			// create
-			_, err := client.CreateLKEClusterPool(ctx, clusterID, raw.LKEClusterPoolCreateOptions{
+			_, err := client.CreateLKENodePool(ctx, clusterID, raw.LKENodePoolCreateOptions{
 				Count: count,
 				Type:  t,
 				// Disks: nil, // not supported?
@@ -329,7 +335,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 		}
 	}
 
-	pools, err = client.ListLKEClusterPools(context.Background(), clusterID, nil)
+	pools, err = client.ListLKENodePools(context.Background(), clusterID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pools for LKE cluster %d: %s", clusterID, err)
 	}
@@ -351,7 +357,7 @@ func (d *Driver) generateClusterCreateRequest(state state) raw.LKEClusterCreateO
 		Tags:       state.Tags,
 	}
 	for t, count := range state.NodePools {
-		req.NodePools = append(req.NodePools, raw.LKEClusterPoolCreateOptions{
+		req.NodePools = append(req.NodePools, raw.LKENodePoolCreateOptions{
 			Type:  t,
 			Count: count,
 			// Disks: nil, // unsupported?
@@ -389,9 +395,13 @@ func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types
 			return nil, fmt.Errorf("failed to parse cluster id: %s", err)
 		}
 
-		client.WaitForLKEClusterConditions(ctx, clusterID, raw.LKEClusterPollOptions{
+		err = client.WaitForLKEClusterConditions(ctx, clusterID, raw.LKEClusterPollOptions{
+			Retry:          true,
 			TimeoutSeconds: 10 * 60,
 		}, k8scondition.ClusterHasReadyNode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to wait for lke cluster ready node: %s", err)
+		}
 
 		lkeKubeconfig, err := client.GetLKEClusterKubeconfig(ctx, clusterID)
 		if err != nil {
@@ -491,6 +501,8 @@ func (d *Driver) getServiceClient(ctx context.Context, token string) (*raw.Clien
 }
 
 func generateServiceAccountTokenForLKE(kubeconfig string) (string, error) {
+	result := ""
+
 	clientset, err := k8s.BuildClientsetFromConfig(&raw.LKEClusterKubeconfig{
 		KubeConfig: kubeconfig,
 	}, nil)
@@ -498,7 +510,18 @@ func generateServiceAccountTokenForLKE(kubeconfig string) (string, error) {
 		return "", err
 	}
 
-	return generateServiceAccountToken(clientset)
+	err = wait.Poll(retryInterval, serviceAccountRetryTimeout, func() (done bool, err error) {
+		token, err := generateServiceAccountToken(clientset)
+		if err != nil {
+			logrus.Debugf("retrying on service account generation error: %s", err)
+			return false, nil
+		}
+
+		result = token
+		return true, nil
+	})
+
+	return result, err
 }
 
 func (d *Driver) GetClusterSize(ctx context.Context, info *types.ClusterInfo) (*types.NodeCount, error) {
@@ -517,7 +540,7 @@ func (d *Driver) GetClusterSize(ctx context.Context, info *types.ClusterInfo) (*
 		return nil, err
 	}
 
-	pools, err := client.ListLKEClusterPools(ctx, clusterID, nil)
+	pools, err := client.ListLKENodePools(ctx, clusterID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pools for LKE cluster %d: %s", clusterID, err)
 	}
@@ -570,7 +593,7 @@ func (d *Driver) SetClusterSize(ctx context.Context, info *types.ClusterInfo, co
 
 	logrus.Info("updating cluster size")
 
-	pools, err := client.ListLKEClusterPools(ctx, clusterID, nil)
+	pools, err := client.ListLKENodePools(ctx, clusterID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get pools for LKE cluster %d: %s", clusterID, err)
 	}
@@ -578,7 +601,7 @@ func (d *Driver) SetClusterSize(ctx context.Context, info *types.ClusterInfo, co
 	poolID := pools[0].ID
 	poolNodeCount := pools[0].Count
 
-	_, err = client.UpdateLKEClusterPool(ctx, clusterID, poolID, raw.LKEClusterPoolUpdateOptions{
+	_, err = client.UpdateLKENodePool(ctx, clusterID, poolID, raw.LKENodePoolUpdateOptions{
 		Count: int(count.Count),
 	})
 
@@ -596,7 +619,7 @@ func (d *Driver) SetClusterSize(ctx context.Context, info *types.ClusterInfo, co
 
 func waitUntilPoolReady(ctx context.Context, client *raw.Client, clusterID int, poolID int) error {
 	return wait.PollImmediateInfinite(retryInterval, func() (done bool, err error) {
-		pool, err := client.GetLKEClusterPool(ctx, clusterID, poolID)
+		pool, err := client.GetLKENodePool(ctx, clusterID, poolID)
 		if err != nil {
 			return false, err
 		}

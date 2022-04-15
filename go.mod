@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/google/uuid v1.1.1
-	github.com/linode/linodego v1.3.0
+	github.com/linode/linodego v1.4.1
 	github.com/linode/linodego/k8s v0.0.0-20201007210559-5fa0a6ce0187
 	github.com/rancher/kontainer-engine v0.0.4-dev.0.20201016211542-bb3014a09ff1
 	github.com/sirupsen/logrus v1.4.2
