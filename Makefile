@@ -18,6 +18,9 @@ trash-keep: .dapper
 
 deps: trash
 
+test:
+	go test $(TEST_ARGS) -timeout 25m
+
 .DEFAULT_GOAL := ci
 
 .PHONY: $(TARGETS)
