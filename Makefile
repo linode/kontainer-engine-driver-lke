@@ -1,5 +1,7 @@
 TARGETS := $(shell ls scripts)
 
+TEST_TIMEOUT := 25m
+
 .dapper:
 	@echo Downloading dapper
 	@curl -sL https://releases.rancher.com/dapper/latest/dapper-`uname -s`-`uname -m` > .dapper.tmp
@@ -19,7 +21,7 @@ trash-keep: .dapper
 deps: trash
 
 test:
-	go test $(TEST_ARGS) -timeout 25m
+	go test $(TEST_ARGS) -timeout $(TEST_TIMEOUT)
 
 .DEFAULT_GOAL := ci
 
