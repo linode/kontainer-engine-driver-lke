@@ -281,12 +281,12 @@ func TestDriver_HighAvailabilityUpgrade(t *testing.T) {
 }
 
 func validateLKEClusterProperties(t *testing.T, client *raw.Client, info *types.ClusterInfo, ha bool) {
-	clusterId, err := strconv.Atoi(info.Metadata["cluster-id"])
+	clusterID, err := strconv.Atoi(info.Metadata["cluster-id"])
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	linodeCluster, err := client.GetLKECluster(context.Background(), clusterId)
+	linodeCluster, err := client.GetLKECluster(context.Background(), clusterID)
 	if err != nil {
 		t.Fatal(err)
 	}
