@@ -277,6 +277,27 @@ func TestDriver_HighAvailabilityUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Let's make sure a null HA field doesn't try to disable HA
+	info, err = d.Update(context.Background(), info, &types.DriverOptions{
+		StringOptions: map[string]string{
+			"name":               name,
+			"label":              name,
+			"access-token":       token,
+			"region":             "us-west",
+			"kubernetes-version": kubernetesVersion,
+		},
+		StringSliceOptions: map[string]*types.StringSlice{
+			"node-pools": {
+				Value: []string{
+					"g6-standard-1=3",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	validateLKEClusterProperties(t, client, info, true)
 }
 
