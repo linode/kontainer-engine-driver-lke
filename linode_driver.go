@@ -49,8 +49,8 @@ type state struct {
 	Tags      []string
 	NodePools map[string]int // type -> count
 
-	// Whether this is an HA cluster
-	HighAvailability bool
+	// Whether this is an HA cluster (nullable)
+	HighAvailability *bool
 
 	// cluster info
 	ClusterInfo types.ClusterInfo
@@ -114,15 +114,10 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 		Type:  types.StringSliceType,
 		Usage: "The list of node pools created for the cluster",
 	}
-	driverFlag.Options["high-availability"] = &types.Flag{
-		Type:  types.BoolType,
-		Usage: "If enabled, this cluster will be a high availability cluster",
 
-		// This technically isn't necessary, but we'd like to avoid any possibility
-		// of users accidentally provisioning HA clusters.
-		Default: &types.Default{
-			DefaultBool: false,
-		},
+	driverFlag.Options["high-availability"] = &types.Flag{
+		Type:  types.BoolPointerType,
+		Usage: "If enabled, this cluster will be a high availability cluster",
 	}
 
 	return &driverFlag, nil
@@ -150,14 +145,8 @@ func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags
 	}
 
 	driverFlag.Options["high-availability"] = &types.Flag{
-		Type:  types.BoolType,
+		Type:  types.BoolPointerType,
 		Usage: "If enabled, this cluster will be a high availability cluster",
-
-		// This technically isn't necessary, but we'd like to avoid any possibility
-		// of users accidentally provisioning HA clusters.
-		Default: &types.Default{
-			DefaultBool: false,
-		},
 	}
 
 	return &driverFlag, nil
@@ -182,7 +171,12 @@ func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 	d.Region = options.GetValueFromDriverOptions(driverOptions, types.StringType, "region").(string)
 	d.K8sVersion = options.GetValueFromDriverOptions(driverOptions, types.StringType, "kubernetes-version", "kubernetesVersion").(string)
 
-	d.HighAvailability = options.GetValueFromDriverOptions(driverOptions, types.BoolType, "high-availability", "highAvailability").(bool)
+	// Go can't cast a nil value to *bool, so we need to manually check here
+	d.HighAvailability = nil
+	if ha := options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType,
+		"high-availability", "highAvailability"); ha != nil {
+		d.HighAvailability = ha.(*bool)
+	}
 
 	d.Tags = []string{}
 	tags := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "tags")
@@ -308,24 +302,35 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 		return nil, fmt.Errorf("failed to parse cluster id: %s", err)
 	}
 
-	if state.HighAvailability && !newState.HighAvailability {
-		return nil, fmt.Errorf("high availability clusters cannot be downgraded to standard clusters")
+	stateHAOk := state.HighAvailability != nil
+	newStateHAOk := newState.HighAvailability != nil
+
+	updateOpts := raw.LKEClusterUpdateOptions{}
+	shouldUpdate := false
+
+	if state.Label != newState.Label {
+		updateOpts.Label = newState.Label
+		shouldUpdate = true
 	}
 
-	if state.Label != newState.Label || !sets.NewString(state.Tags...).Equal(sets.NewString(newState.Tags...)) ||
-		state.HighAvailability != newState.HighAvailability {
+	if !sets.NewString(state.Tags...).Equal(sets.NewString(newState.Tags...)) {
+		updateOpts.Tags = &newState.Tags
+		state.Tags = newState.Tags
+		shouldUpdate = true
+	}
 
-		_, err = client.UpdateLKECluster(ctx, clusterID, raw.LKEClusterUpdateOptions{
-			Label:        newState.Label,
-			Tags:         &newState.Tags,
-			ControlPlane: &raw.LKEClusterControlPlane{HighAvailability: newState.HighAvailability},
-		})
+	// We should only update HA under certain conditions
+	if newStateHAOk && (!stateHAOk || *state.HighAvailability != *newState.HighAvailability) {
+		updateOpts.ControlPlane = &raw.LKEClusterControlPlane{
+			HighAvailability: *newState.HighAvailability,
+		}
+	}
+
+	if shouldUpdate {
+		_, err = client.UpdateLKECluster(ctx, clusterID, updateOpts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update cluster %d: %s", clusterID, err)
 		}
-
-		state.HighAvailability = newState.HighAvailability
-		state.Tags = newState.Tags
 	}
 
 	pools, err := client.ListLKENodePools(ctx, clusterID, nil)
@@ -393,10 +398,14 @@ func (d *Driver) generateClusterCreateRequest(state state) raw.LKEClusterCreateO
 		Region:     state.Region,
 		K8sVersion: state.K8sVersion,
 		Tags:       state.Tags,
-		ControlPlane: &raw.LKEClusterControlPlane{
-			HighAvailability: state.HighAvailability,
-		},
 	}
+
+	// We should only consider HA if it's defined
+	if state.HighAvailability != nil {
+		req.ControlPlane = &raw.LKEClusterControlPlane{
+			HighAvailability: *state.HighAvailability}
+	}
+
 	for t, count := range state.NodePools {
 		req.NodePools = append(req.NodePools, raw.LKENodePoolCreateOptions{
 			Type:  t,
