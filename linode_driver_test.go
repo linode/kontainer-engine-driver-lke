@@ -263,7 +263,7 @@ func TestDriver_HighAvailabilityUpgrade(t *testing.T) {
 		StringSliceOptions: map[string]*types.StringSlice{
 			"node-pools": {
 				Value: []string{
-					"g6-standard-1=3",
+					"g6-standard-1=2",
 				},
 			},
 		},
