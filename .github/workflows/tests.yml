@@ -22,6 +22,6 @@ jobs:
 
       - name: Run checks
         env:
-          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
+          LINODE_TOKEN: ${{ secrets.DX_LINODE_TOKEN }}
         run: |
           make
