@@ -324,6 +324,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 		updateOpts.ControlPlane = &raw.LKEClusterControlPlane{
 			HighAvailability: *newState.HighAvailability,
 		}
+		shouldUpdate = true
 	}
 
 	if shouldUpdate {
