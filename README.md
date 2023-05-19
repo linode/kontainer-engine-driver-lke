@@ -16,7 +16,6 @@ via URLs that your Rancher instance can establish a connection to and download
 the driver binaries.  For example, this driver is distributed via a GitHub 
 release and can be downloaded from one of those URLs directly.
 
-
 ## Running
 
 Go to the `Cluster Drivers` management screen in Rancher and click 
@@ -25,6 +24,25 @@ Go to the `Cluster Drivers` management screen in Rancher and click
 checksum (optional), and click `Create`. Rancher will automatically download 
 and install your driver. It will then become available to use on the 
 `Add Cluster` screen.
+
+## Testing
+
+This project contains a simple integration test suite to ensure the driver is working as 
+expected against the Linode API.
+
+In order to run the test suite, you will first need to create a 
+[Linode Personal Access Token](https://www.linode.com/docs/products/tools/api/guides/manage-api-tokens/)
+and export it in your shell as the `LINODE_TOKEN` environment variable:
+
+```bash
+export LINODE_TOKEN=YOURTOKENHERE
+```
+
+From here you can run the following command to run the integration test suite:
+
+```bash
+make test
+```
 
 ## License
 Copyright (c) 2018 [Rancher Labs, Inc.](http://rancher.com)
