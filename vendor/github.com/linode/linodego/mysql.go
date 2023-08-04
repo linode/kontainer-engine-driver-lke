@@ -6,27 +6,38 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/linode/linodego/internal/parseabletime"
+)
+
+type MySQLDatabaseTarget string
+
+type MySQLDatabaseMaintenanceWindow = DatabaseMaintenanceWindow
+
+const (
+	MySQLDatabaseTargetPrimary   MySQLDatabaseTarget = "primary"
+	MySQLDatabaseTargetSecondary MySQLDatabaseTarget = "secondary"
 )
 
 // A MySQLDatabase is a instance of Linode MySQL Managed Databases
 type MySQLDatabase struct {
-	ID              int          `json:"id"`
-	Status          string       `json:"status"`
-	Label           string       `json:"label"`
-	Hosts           DatabaseHost `json:"hosts"`
-	Region          string       `json:"region"`
-	Type            string       `json:"type"`
-	Engine          string       `json:"engine"`
-	Version         string       `json:"version"`
-	ClusterSize     int          `json:"cluster_size"`
-	ReplicationType string       `json:"replication_type"`
-	SSLConnection   bool         `json:"ssl_connection"`
-	Encrypted       bool         `json:"encrypted"`
-	AllowList       []string     `json:"allow_list"`
-	InstanceURI     string       `json:"instance_uri"`
-	Created         *time.Time   `json:"-"`
-	Updated         *time.Time   `json:"-"`
+	ID              int                       `json:"id"`
+	Status          DatabaseStatus            `json:"status"`
+	Label           string                    `json:"label"`
+	Hosts           DatabaseHost              `json:"hosts"`
+	Region          string                    `json:"region"`
+	Type            string                    `json:"type"`
+	Engine          string                    `json:"engine"`
+	Version         string                    `json:"version"`
+	ClusterSize     int                       `json:"cluster_size"`
+	ReplicationType string                    `json:"replication_type"`
+	SSLConnection   bool                      `json:"ssl_connection"`
+	Encrypted       bool                      `json:"encrypted"`
+	AllowList       []string                  `json:"allow_list"`
+	InstanceURI     string                    `json:"instance_uri"`
+	Created         *time.Time                `json:"-"`
+	Updated         *time.Time                `json:"-"`
+	Updates         DatabaseMaintenanceWindow `json:"updates"`
 }
 
 func (d *MySQLDatabase) UnmarshalJSON(b []byte) error {
@@ -51,21 +62,22 @@ func (d *MySQLDatabase) UnmarshalJSON(b []byte) error {
 
 // MySQLCreateOptions fields are used when creating a new MySQL Database
 type MySQLCreateOptions struct {
-	AllowList       []string `json:"allow_list"`
 	Label           string   `json:"label"`
 	Region          string   `json:"region"`
 	Type            string   `json:"type"`
 	Engine          string   `json:"engine"`
-	ReplicationType string   `json:"replication_type"`
-	ClusterSize     int      `json:"cluster_size"`
-	Encrypted       bool     `json:"encrypted"`
-	SSLConnection   bool     `json:"ssl_connection"`
+	AllowList       []string `json:"allow_list,omitempty"`
+	ReplicationType string   `json:"replication_type,omitempty"`
+	ClusterSize     int      `json:"cluster_size,omitempty"`
+	Encrypted       bool     `json:"encrypted,omitempty"`
+	SSLConnection   bool     `json:"ssl_connection,omitempty"`
 }
 
 // MySQLUpdateOptions fields are used when altering the existing MySQL Database
 type MySQLUpdateOptions struct {
-	Label     string   `json:"label,omitempty"`
-	AllowList []string `json:"allow_list,omitempty"`
+	Label     string                     `json:"label,omitempty"`
+	AllowList *[]string                  `json:"allow_list,omitempty"`
+	Updates   *DatabaseMaintenanceWindow `json:"updates,omitempty"`
 }
 
 // MySQLDatabaseBackup is information for interacting with a backup for the existing MySQL Database
@@ -74,6 +86,12 @@ type MySQLDatabaseBackup struct {
 	Label   string     `json:"label"`
 	Type    string     `json:"type"`
 	Created *time.Time `json:"-"`
+}
+
+// MySQLBackupCreateOptions are options used for CreateMySQLDatabaseBackup(...)
+type MySQLBackupCreateOptions struct {
+	Label  string              `json:"label"`
+	Target MySQLDatabaseTarget `json:"target"`
 }
 
 func (d *MySQLDatabaseBackup) UnmarshalJSON(b []byte) error {
@@ -99,16 +117,18 @@ type MySQLDatabasesPagedResponse struct {
 	Data []MySQLDatabase `json:"data"`
 }
 
-func (MySQLDatabasesPagedResponse) endpoint(c *Client) string {
-	endpoint, err := c.DatabaseMySQLInstances.Endpoint()
-	if err != nil {
-		panic(err)
-	}
-	return endpoint
+func (MySQLDatabasesPagedResponse) endpoint(_ ...any) string {
+	return "databases/mysql/instances"
 }
 
-func (resp *MySQLDatabasesPagedResponse) appendData(r *MySQLDatabasesPagedResponse) {
-	resp.Data = append(resp.Data, r.Data...)
+func (resp *MySQLDatabasesPagedResponse) castResult(r *resty.Request, e string) (int, int, error) {
+	res, err := coupleAPIErrors(r.SetResult(MySQLDatabasesPagedResponse{}).Get(e))
+	if err != nil {
+		return 0, 0, err
+	}
+	castedRes := res.Result().(*MySQLDatabasesPagedResponse)
+	resp.Data = append(resp.Data, castedRes.Data...)
+	return castedRes.Pages, castedRes.Results, nil
 }
 
 // MySQLDatabaseCredential is the Root Credentials to access the Linode Managed Database
@@ -122,7 +142,7 @@ type MySQLDatabaseSSL struct {
 	CACertificate []byte `json:"ca_certificate"`
 }
 
-// ListMySQLDatabase lists all MySQL Databases associated with the account
+// ListMySQLDatabases lists all MySQL Databases associated with the account
 func (c *Client) ListMySQLDatabases(ctx context.Context, opts *ListOptions) ([]MySQLDatabase, error) {
 	response := MySQLDatabasesPagedResponse{}
 
@@ -139,23 +159,26 @@ type MySQLDatabaseBackupsPagedResponse struct {
 	Data []MySQLDatabaseBackup `json:"data"`
 }
 
-func (MySQLDatabaseBackupsPagedResponse) endpointWithID(c *Client, id int) string {
-	endpoint, err := c.DatabaseMySQLInstances.Endpoint()
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("%s/%d/backups", endpoint, id)
+func (MySQLDatabaseBackupsPagedResponse) endpoint(ids ...any) string {
+	id := ids[0].(int)
+	return fmt.Sprintf("databases/mysql/instances/%d/backups", id)
 }
 
-func (resp *MySQLDatabaseBackupsPagedResponse) appendData(r *MySQLDatabaseBackupsPagedResponse) {
-	resp.Data = append(resp.Data, r.Data...)
+func (resp *MySQLDatabaseBackupsPagedResponse) castResult(r *resty.Request, e string) (int, int, error) {
+	res, err := coupleAPIErrors(r.SetResult(MySQLDatabaseBackupsPagedResponse{}).Get(e))
+	if err != nil {
+		return 0, 0, err
+	}
+	castedRes := res.Result().(*MySQLDatabaseBackupsPagedResponse)
+	resp.Data = append(resp.Data, castedRes.Data...)
+	return castedRes.Pages, castedRes.Results, nil
 }
 
 // ListMySQLDatabaseBackups lists all MySQL Database Backups associated with the given MySQL Database
 func (c *Client) ListMySQLDatabaseBackups(ctx context.Context, databaseID int, opts *ListOptions) ([]MySQLDatabaseBackup, error) {
 	response := MySQLDatabaseBackupsPagedResponse{}
 
-	err := c.listHelperWithID(ctx, &response, databaseID, opts)
+	err := c.listHelper(ctx, &response, opts, databaseID)
 	if err != nil {
 		return nil, err
 	}
@@ -164,16 +187,10 @@ func (c *Client) ListMySQLDatabaseBackups(ctx context.Context, databaseID int, o
 }
 
 // GetMySQLDatabase returns a single MySQL Database matching the id
-func (c *Client) GetMySQLDatabase(ctx context.Context, id int) (*MySQLDatabase, error) {
-	e, err := c.DatabaseMySQLInstances.Endpoint()
-	if err != nil {
-		return nil, err
-	}
-
-	req := c.R(ctx)
-
-	e = fmt.Sprintf("%s/%d", e, id)
-	r, err := coupleAPIErrors(req.SetResult(&MySQLDatabase{}).Get(e))
+func (c *Client) GetMySQLDatabase(ctx context.Context, databaseID int) (*MySQLDatabase, error) {
+	e := fmt.Sprintf("databases/mysql/instances/%d", databaseID)
+	req := c.R(ctx).SetResult(&MySQLDatabase{})
+	r, err := coupleAPIErrors(req.Get(e))
 	if err != nil {
 		return nil, err
 	}
@@ -182,24 +199,15 @@ func (c *Client) GetMySQLDatabase(ctx context.Context, id int) (*MySQLDatabase, 
 }
 
 // CreateMySQLDatabase creates a new MySQL Database using the createOpts as configuration, returns the new MySQL Database
-func (c *Client) CreateMySQLDatabase(ctx context.Context, createOpts MySQLCreateOptions) (*MySQLDatabase, error) {
-	var body string
-	e, err := c.DatabaseMySQLInstances.Endpoint()
+func (c *Client) CreateMySQLDatabase(ctx context.Context, opts MySQLCreateOptions) (*MySQLDatabase, error) {
+	body, err := json.Marshal(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	req := c.R(ctx).SetResult(&MySQLDatabase{})
-
-	if bodyData, err := json.Marshal(createOpts); err == nil {
-		body = string(bodyData)
-	} else {
-		return nil, NewError(err)
-	}
-
-	r, err := coupleAPIErrors(req.
-		SetBody(body).
-		Post(e))
+	e := "databases/mysql/instances"
+	req := c.R(ctx).SetResult(&MySQLDatabase{}).SetBody(string(body))
+	r, err := coupleAPIErrors(req.Post(e))
 	if err != nil {
 		return nil, err
 	}
@@ -207,36 +215,22 @@ func (c *Client) CreateMySQLDatabase(ctx context.Context, createOpts MySQLCreate
 }
 
 // DeleteMySQLDatabase deletes an existing MySQL Database with the given id
-func (c *Client) DeleteMySQLDatabase(ctx context.Context, id int) error {
-	e, err := c.DatabaseMySQLInstances.Endpoint()
-	if err != nil {
-		return err
-	}
-
-	req := c.R(ctx)
-
-	e = fmt.Sprintf("%s/%d", e, id)
-	_, err = coupleAPIErrors(req.Delete(e))
+func (c *Client) DeleteMySQLDatabase(ctx context.Context, databaseID int) error {
+	e := fmt.Sprintf("databases/mysql/instances/%d", databaseID)
+	_, err := coupleAPIErrors(c.R(ctx).Delete(e))
 	return err
 }
 
 // UpdateMySQLDatabase updates the given MySQL Database with the provided opts, returns the MySQLDatabase with the new settings
-func (c *Client) UpdateMySQLDatabase(ctx context.Context, id int, opts MySQLUpdateOptions) (*MySQLDatabase, error) {
-	e, err := c.DatabaseMySQLInstances.Endpoint()
+func (c *Client) UpdateMySQLDatabase(ctx context.Context, databaseID int, opts MySQLUpdateOptions) (*MySQLDatabase, error) {
+	body, err := json.Marshal(opts)
 	if err != nil {
 		return nil, err
 	}
-	req := c.R(ctx).SetResult(&MySQLDatabase{})
 
-	bodyData, err := json.Marshal(opts)
-	if err != nil {
-		return nil, NewError(err)
-	}
-
-	body := string(bodyData)
-
-	e = fmt.Sprintf("%s/%d", e, id)
-	r, err := coupleAPIErrors(req.SetBody(body).Put(e))
+	e := fmt.Sprintf("databases/mysql/instances/%d", databaseID)
+	req := c.R(ctx).SetResult(&MySQLDatabase{}).SetBody(string(body))
+	r, err := coupleAPIErrors(req.Put(e))
 	if err != nil {
 		return nil, err
 	}
@@ -245,16 +239,10 @@ func (c *Client) UpdateMySQLDatabase(ctx context.Context, id int, opts MySQLUpda
 }
 
 // GetMySQLDatabaseSSL returns the SSL Certificate for the given MySQL Database
-func (c *Client) GetMySQLDatabaseSSL(ctx context.Context, id int) (*MySQLDatabaseSSL, error) {
-	e, err := c.DatabaseMySQLInstances.Endpoint()
-	if err != nil {
-		return nil, err
-	}
-
-	req := c.R(ctx)
-
-	e = fmt.Sprintf("%s/%d/ssl", e, id)
-	r, err := coupleAPIErrors(req.SetResult(&MySQLDatabaseSSL{}).Get(e))
+func (c *Client) GetMySQLDatabaseSSL(ctx context.Context, databaseID int) (*MySQLDatabaseSSL, error) {
+	e := fmt.Sprintf("databases/mysql/instances/%d/ssl", databaseID)
+	req := c.R(ctx).SetResult(&MySQLDatabaseSSL{})
+	r, err := coupleAPIErrors(req.Get(e))
 	if err != nil {
 		return nil, err
 	}
@@ -263,16 +251,10 @@ func (c *Client) GetMySQLDatabaseSSL(ctx context.Context, id int) (*MySQLDatabas
 }
 
 // GetMySQLDatabaseCredentials returns the Root Credentials for the given MySQL Database
-func (c *Client) GetMySQLDatabaseCredentials(ctx context.Context, id int) (*MySQLDatabaseCredential, error) {
-	e, err := c.DatabaseMySQLInstances.Endpoint()
-	if err != nil {
-		return nil, err
-	}
-
-	req := c.R(ctx)
-
-	e = fmt.Sprintf("%s/%d/credentials", e, id)
-	r, err := coupleAPIErrors(req.SetResult(&MySQLDatabaseCredential{}).Get(e))
+func (c *Client) GetMySQLDatabaseCredentials(ctx context.Context, databaseID int) (*MySQLDatabaseCredential, error) {
+	e := fmt.Sprintf("databases/mysql/instances/%d/credentials", databaseID)
+	req := c.R(ctx).SetResult(&MySQLDatabaseCredential{})
+	r, err := coupleAPIErrors(req.Get(e))
 	if err != nil {
 		return nil, err
 	}
@@ -281,34 +263,17 @@ func (c *Client) GetMySQLDatabaseCredentials(ctx context.Context, id int) (*MySQ
 }
 
 // ResetMySQLDatabaseCredentials returns the Root Credentials for the given MySQL Database (may take a few seconds to work)
-func (c *Client) ResetMySQLDatabaseCredentials(ctx context.Context, id int) error {
-	e, err := c.DatabaseMySQLInstances.Endpoint()
-	if err != nil {
-		return err
-	}
-
-	req := c.R(ctx)
-
-	e = fmt.Sprintf("%s/%d/credentials/reset", e, id)
-	_, err = coupleAPIErrors(req.Post(e))
-	if err != nil {
-		return err
-	}
-
-	return nil
+func (c *Client) ResetMySQLDatabaseCredentials(ctx context.Context, databaseID int) error {
+	e := fmt.Sprintf("databases/mysql/instances/%d/credentials/reset", databaseID)
+	_, err := coupleAPIErrors(c.R(ctx).Post(e))
+	return err
 }
 
 // GetMySQLDatabaseBackup returns a specific MySQL Database Backup with the given ids
 func (c *Client) GetMySQLDatabaseBackup(ctx context.Context, databaseID int, backupID int) (*MySQLDatabaseBackup, error) {
-	e, err := c.DatabaseMySQLInstances.Endpoint()
-	if err != nil {
-		return nil, err
-	}
-
-	req := c.R(ctx)
-
-	e = fmt.Sprintf("%s/%d/backups/%d", e, databaseID, backupID)
-	r, err := coupleAPIErrors(req.SetResult(&MySQLDatabaseBackup{}).Get(e))
+	e := fmt.Sprintf("databases/mysql/instances/%d/backups/%d", databaseID, backupID)
+	req := c.R(ctx).SetResult(&MySQLDatabaseBackup{})
+	r, err := coupleAPIErrors(req.Get(e))
 	if err != nil {
 		return nil, err
 	}
@@ -318,17 +283,26 @@ func (c *Client) GetMySQLDatabaseBackup(ctx context.Context, databaseID int, bac
 
 // RestoreMySQLDatabaseBackup returns the given MySQL Database with the given Backup
 func (c *Client) RestoreMySQLDatabaseBackup(ctx context.Context, databaseID int, backupID int) error {
-	e, err := c.DatabaseMySQLInstances.Endpoint()
+	e := fmt.Sprintf("databases/mysql/instances/%d/backups/%d/restore", databaseID, backupID)
+	_, err := coupleAPIErrors(c.R(ctx).Post(e))
+	return err
+}
+
+// CreateMySQLDatabaseBackup creates a snapshot for the given MySQL database
+func (c *Client) CreateMySQLDatabaseBackup(ctx context.Context, databaseID int, opts MySQLBackupCreateOptions) error {
+	body, err := json.Marshal(opts)
 	if err != nil {
 		return err
 	}
 
-	req := c.R(ctx)
+	e := fmt.Sprintf("databases/mysql/instances/%d/backups", databaseID)
+	_, err = coupleAPIErrors(c.R(ctx).SetBody(string(body)).Post(e))
+	return err
+}
 
-	e = fmt.Sprintf("%s/%d/backups/%d/restore", e, databaseID, backupID)
-	_, err = coupleAPIErrors(req.Post(e))
-	if err != nil {
-		return err
-	}
-	return nil
+// PatchMySQLDatabase applies security patches and updates to the underlying operating system of the Managed MySQL Database
+func (c *Client) PatchMySQLDatabase(ctx context.Context, databaseID int) error {
+	e := fmt.Sprintf("databases/mysql/instances/%d/patch", databaseID)
+	_, err := coupleAPIErrors(c.R(ctx).Post(e))
+	return err
 }

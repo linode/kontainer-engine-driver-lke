@@ -9,13 +9,20 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
+	"reflect"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-resty/resty/v2"
 )
 
 const (
+	// APIConfigEnvVar environment var to get path to Linode config
+	APIConfigEnvVar = "LINODE_CONFIG"
+	// APIConfigProfileEnvVar specifies the profile to use when loading from a Linode config
+	APIConfigProfileEnvVar = "LINODE_PROFILE"
 	// APIHost Linode API hostname
 	APIHost = "api.linode.com"
 	// APIHostVar environment var to check for alternate API URL
@@ -42,77 +49,40 @@ var envDebug = false
 type Client struct {
 	resty             *resty.Client
 	userAgent         string
-	resources         map[string]*Resource
 	debug             bool
 	retryConditionals []RetryConditional
 
-	millisecondsPerPoll time.Duration
+	pollInterval time.Duration
 
-	baseURL    string
-	apiVersion string
-	apiProto   string
+	baseURL         string
+	apiVersion      string
+	apiProto        string
+	selectedProfile string
+	loadedProfile   string
 
-	Account                *Resource
-	AccountSettings        *Resource
-	Databases              *Resource
-	DomainRecords          *Resource
-	Domains                *Resource
-	Events                 *Resource
-	Firewalls              *Resource
-	FirewallDevices        *Resource
-	FirewallRules          *Resource
-	IPAddresses            *Resource
-	IPv6Pools              *Resource
-	IPv6Ranges             *Resource
-	Images                 *Resource
-	InstanceConfigs        *Resource
-	InstanceDisks          *Resource
-	InstanceIPs            *Resource
-	InstanceSnapshots      *Resource
-	InstanceStats          *Resource
-	InstanceVolumes        *Resource
-	Instances              *Resource
-	InvoiceItems           *Resource
-	Invoices               *Resource
-	Kernels                *Resource
-	LKEClusters            *Resource
-	LKEClusterAPIEndpoints *Resource
+	configProfiles map[string]ConfigProfile
 
-	// Deprecated: Please use LKENodePools
-	LKEClusterPools *Resource
-
-	LKENodePools             *Resource
-	LKEVersions              *Resource
-	Longview                 *Resource
-	LongviewClients          *Resource
-	LongviewSubscriptions    *Resource
-	Managed                  *Resource
-	DatabaseMySQLInstances   *Resource
-	NodeBalancerConfigs      *Resource
-	NodeBalancerNodes        *Resource
-	NodeBalancerStats        *Resource
-	NodeBalancers            *Resource
-	Notifications            *Resource
-	OAuthClients             *Resource
-	ObjectStorageBuckets     *Resource
-	ObjectStorageBucketCerts *Resource
-	ObjectStorageClusters    *Resource
-	ObjectStorageKeys        *Resource
-	Payments                 *Resource
-	Profile                  *Resource
-	Regions                  *Resource
-	SSHKeys                  *Resource
-	StackScripts             *Resource
-	Tags                     *Resource
-	Tickets                  *Resource
-	Token                    *Resource
-	Tokens                   *Resource
-	Types                    *Resource
-	UserGrants               *Resource
-	Users                    *Resource
-	VLANs                    *Resource
-	Volumes                  *Resource
+	// Fields for caching endpoint responses
+	shouldCache     bool
+	cacheExpiration time.Duration
+	cachedEntries   map[string]clientCacheEntry
+	cachedEntryLock *sync.RWMutex
 }
+
+type EnvDefaults struct {
+	Token   string
+	Profile string
+}
+
+type clientCacheEntry struct {
+	Created time.Time
+	Data    any
+	// If != nil, use this instead of the
+	// global expiry
+	ExpiryOverride *time.Duration
+}
+
+type Request = resty.Request
 
 func init() {
 	// Wether or not we will enable Resty debugging output
@@ -149,6 +119,13 @@ func (c *Client) SetDebug(debug bool) *Client {
 	c.resty.SetDebug(debug)
 
 	return c
+}
+
+// OnBeforeRequest adds a handler to the request body to run before the request is sent
+func (c *Client) OnBeforeRequest(m func(request *Request) error) {
+	c.resty.OnBeforeRequest(func(client *resty.Client, req *resty.Request) error {
+		return m(req)
+	})
 }
 
 // SetBaseURL sets the base URL of the Linode v4 API (https://api.linode.com/v4)
@@ -189,7 +166,14 @@ func (c *Client) updateHostURL() {
 		apiProto = c.apiProto
 	}
 
-	c.resty.SetHostURL(fmt.Sprintf("%s://%s/%s", apiProto, baseURL, apiVersion))
+	c.resty.SetHostURL(
+		fmt.Sprintf(
+			"%s://%s/%s",
+			apiProto,
+			baseURL,
+			url.PathEscape(apiVersion),
+		),
+	)
 }
 
 // SetRootCertificate adds a root certificate to the underlying TLS client config
@@ -212,6 +196,8 @@ func (c *Client) SetRetries() *Client {
 		addRetryConditional(tooManyRequestsRetryCondition).
 		addRetryConditional(serviceUnavailableRetryCondition).
 		addRetryConditional(requestTimeoutRetryCondition).
+		addRetryConditional(requestGOAWAYRetryCondition).
+		addRetryConditional(requestNGINXRetryCondition).
 		SetRetryMaxWaitTime(APIRetryMaxWaitTime)
 	configureRetries(c)
 	return c
@@ -226,6 +212,115 @@ func (c *Client) AddRetryCondition(retryCondition RetryConditional) *Client {
 func (c *Client) addRetryConditional(retryConditional RetryConditional) *Client {
 	c.retryConditionals = append(c.retryConditionals, retryConditional)
 	return c
+}
+
+func (c *Client) addCachedResponse(endpoint string, response any, expiry *time.Duration) {
+	if !c.shouldCache {
+		return
+	}
+
+	responseValue := reflect.ValueOf(response)
+
+	entry := clientCacheEntry{
+		Created:        time.Now(),
+		ExpiryOverride: expiry,
+	}
+
+	switch responseValue.Kind() {
+	case reflect.Ptr:
+		// We want to automatically deref pointers to
+		// avoid caching mutable data.
+		entry.Data = responseValue.Elem().Interface()
+	default:
+		entry.Data = response
+	}
+
+	c.cachedEntryLock.Lock()
+	defer c.cachedEntryLock.Unlock()
+
+	c.cachedEntries[endpoint] = entry
+}
+
+func (c *Client) getCachedResponse(endpoint string) any {
+	if !c.shouldCache {
+		return nil
+	}
+
+	c.cachedEntryLock.RLock()
+
+	// Hacky logic to dynamically RUnlock
+	// only if it is still locked by the
+	// end of the function.
+	// This is necessary as we take write
+	// access if the entry has expired.
+	rLocked := true
+	defer func() {
+		if rLocked {
+			c.cachedEntryLock.RUnlock()
+		}
+	}()
+
+	entry, ok := c.cachedEntries[endpoint]
+	if !ok {
+		return nil
+	}
+
+	// Handle expired entries
+	elapsedTime := time.Since(entry.Created)
+
+	hasExpired := elapsedTime > c.cacheExpiration
+	if entry.ExpiryOverride != nil {
+		hasExpired = elapsedTime > *entry.ExpiryOverride
+	}
+
+	if hasExpired {
+		// We need to give up our read access and request read-write access
+		c.cachedEntryLock.RUnlock()
+		rLocked = false
+
+		c.cachedEntryLock.Lock()
+		defer c.cachedEntryLock.Unlock()
+
+		delete(c.cachedEntries, endpoint)
+		return nil
+	}
+
+	return c.cachedEntries[endpoint].Data
+}
+
+// InvalidateCache clears all cached responses for all endpoints.
+func (c *Client) InvalidateCache() {
+	c.cachedEntryLock.Lock()
+	defer c.cachedEntryLock.Unlock()
+
+	// GC will handle the old map
+	c.cachedEntries = make(map[string]clientCacheEntry)
+}
+
+// InvalidateCacheEndpoint invalidates a single cached endpoint.
+func (c *Client) InvalidateCacheEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("failed to parse URL for caching: %w", err)
+	}
+
+	c.cachedEntryLock.Lock()
+	defer c.cachedEntryLock.Unlock()
+
+	delete(c.cachedEntries, u.Path)
+
+	return nil
+}
+
+// SetGlobalCacheExpiration sets the desired time for any cached response
+// to be valid for.
+func (c *Client) SetGlobalCacheExpiration(expiryTime time.Duration) {
+	c.cacheExpiration = expiryTime
+}
+
+// UseCache sets whether response caching should be used
+func (c *Client) UseCache(value bool) {
+	c.shouldCache = value
 }
 
 // SetRetryMaxWaitTime sets the maximum delay before retrying a request.
@@ -256,18 +351,21 @@ func (c *Client) SetRetryCount(count int) *Client {
 // SetPollDelay sets the number of milliseconds to wait between events or status polls.
 // Affects all WaitFor* functions and retries.
 func (c *Client) SetPollDelay(delay time.Duration) *Client {
-	c.millisecondsPerPoll = delay
+	c.pollInterval = delay
 	return c
 }
 
-// Resource looks up a resource by name
-func (c Client) Resource(resourceName string) *Resource {
-	selectedResource, ok := c.resources[resourceName]
-	if !ok {
-		log.Fatalf("Could not find resource named '%s', exiting.", resourceName)
-	}
+// GetPollDelay gets the number of milliseconds to wait between events or status polls.
+// Affects all WaitFor* functions and retries.
+func (c *Client) GetPollDelay() time.Duration {
+	return c.pollInterval
+}
 
-	return selectedResource
+// SetHeader sets a custom header to be used in all API requests made with the current
+// client.
+// NOTE: Some headers may be overridden by the individual request functions.
+func (c *Client) SetHeader(name, value string) {
+	c.resty.SetHeader(name, value)
 }
 
 // NewClient factory to create new Client struct
@@ -277,6 +375,11 @@ func NewClient(hc *http.Client) (client Client) {
 	} else {
 		client.resty = resty.New()
 	}
+
+	client.shouldCache = true
+	client.cacheExpiration = time.Minute * 15
+	client.cachedEntries = make(map[string]clientCacheEntry)
+	client.cachedEntryLock = &sync.RWMutex{}
 
 	client.SetUserAgent(DefaultUserAgent)
 
@@ -295,7 +398,7 @@ func NewClient(hc *http.Client) (client Client) {
 	certPath, certPathExists := os.LookupEnv(APIHostCert)
 
 	if certPathExists {
-		cert, err := ioutil.ReadFile(certPath)
+		cert, err := ioutil.ReadFile(filepath.Clean(certPath))
 		if err != nil {
 			log.Fatalf("[ERROR] Error when reading cert at %s: %s\n", certPath, err.Error())
 		}
@@ -309,131 +412,78 @@ func NewClient(hc *http.Client) (client Client) {
 
 	client.
 		SetRetryWaitTime((1000 * APISecondsPerPoll) * time.Millisecond).
-		SetPollDelay(1000 * APISecondsPerPoll).
+		SetPollDelay(APISecondsPerPoll * time.Second).
 		SetRetries().
 		SetDebug(envDebug)
-
-	addResources(&client)
 
 	return
 }
 
-// nolint
-func addResources(client *Client) {
-	resources := map[string]*Resource{
-		accountName:                  NewResource(client, accountName, accountEndpoint, false, Account{}, nil),                         // really?
-		accountSettingsName:          NewResource(client, accountSettingsName, accountSettingsEndpoint, false, AccountSettings{}, nil), // really?
-		databasesName:                NewResource(client, databasesName, databasesEndpoint, false, Database{}, nil),
-		domainRecordsName:            NewResource(client, domainRecordsName, domainRecordsEndpoint, true, DomainRecord{}, DomainRecordsPagedResponse{}),
-		domainsName:                  NewResource(client, domainsName, domainsEndpoint, false, Domain{}, DomainsPagedResponse{}),
-		eventsName:                   NewResource(client, eventsName, eventsEndpoint, false, Event{}, EventsPagedResponse{}),
-		firewallsName:                NewResource(client, firewallsName, firewallsEndpoint, false, Firewall{}, FirewallsPagedResponse{}),
-		firewallDevicesName:          NewResource(client, firewallDevicesName, firewallDevicesEndpoint, true, FirewallDevice{}, FirewallDevicesPagedResponse{}),
-		firewallRulesName:            NewResource(client, firewallRulesName, firewallRulesEndpoint, true, FirewallRule{}, nil),
-		imagesName:                   NewResource(client, imagesName, imagesEndpoint, false, Image{}, ImagesPagedResponse{}),
-		instanceConfigsName:          NewResource(client, instanceConfigsName, instanceConfigsEndpoint, true, InstanceConfig{}, InstanceConfigsPagedResponse{}),
-		instanceDisksName:            NewResource(client, instanceDisksName, instanceDisksEndpoint, true, InstanceDisk{}, InstanceDisksPagedResponse{}),
-		instanceIPsName:              NewResource(client, instanceIPsName, instanceIPsEndpoint, true, InstanceIP{}, nil), // really?
-		instanceSnapshotsName:        NewResource(client, instanceSnapshotsName, instanceSnapshotsEndpoint, true, InstanceSnapshot{}, nil),
-		instanceStatsName:            NewResource(client, instanceStatsName, instanceStatsEndpoint, true, InstanceStats{}, nil),
-		instanceVolumesName:          NewResource(client, instanceVolumesName, instanceVolumesEndpoint, true, nil, InstanceVolumesPagedResponse{}), // really?
-		instancesName:                NewResource(client, instancesName, instancesEndpoint, false, Instance{}, InstancesPagedResponse{}),
-		invoiceItemsName:             NewResource(client, invoiceItemsName, invoiceItemsEndpoint, true, InvoiceItem{}, InvoiceItemsPagedResponse{}),
-		invoicesName:                 NewResource(client, invoicesName, invoicesEndpoint, false, Invoice{}, InvoicesPagedResponse{}),
-		ipaddressesName:              NewResource(client, ipaddressesName, ipaddressesEndpoint, false, nil, IPAddressesPagedResponse{}), // really?
-		ipv6poolsName:                NewResource(client, ipv6poolsName, ipv6poolsEndpoint, false, nil, IPv6PoolsPagedResponse{}),       // really?
-		ipv6rangesName:               NewResource(client, ipv6rangesName, ipv6rangesEndpoint, false, IPv6Range{}, IPv6RangesPagedResponse{}),
-		kernelsName:                  NewResource(client, kernelsName, kernelsEndpoint, false, LinodeKernel{}, LinodeKernelsPagedResponse{}),
-		lkeClusterAPIEndpointsName:   NewResource(client, lkeClusterAPIEndpointsName, lkeClusterAPIEndpointsEndpoint, true, LKEClusterAPIEndpoint{}, LKEClusterAPIEndpointsPagedResponse{}),
-		lkeClustersName:              NewResource(client, lkeClustersName, lkeClustersEndpoint, false, LKECluster{}, LKEClustersPagedResponse{}),
-		lkeClusterPoolsName:          NewResource(client, lkeClusterPoolsName, lkeClusterPoolsEndpoint, true, LKEClusterPool{}, LKEClusterPoolsPagedResponse{}),
-		lkeNodePoolsName:             NewResource(client, lkeNodePoolsName, lkeNodePoolsEndpoint, true, LKENodePool{}, LKENodePoolsPagedResponse{}),
-		lkeVersionsName:              NewResource(client, lkeVersionsName, lkeVersionsEndpoint, false, LKEVersion{}, LKEVersionsPagedResponse{}),
-		longviewName:                 NewResource(client, longviewName, longviewEndpoint, false, nil, nil), // really?
-		longviewclientsName:          NewResource(client, longviewclientsName, longviewclientsEndpoint, false, LongviewClient{}, LongviewClientsPagedResponse{}),
-		longviewsubscriptionsName:    NewResource(client, longviewsubscriptionsName, longviewsubscriptionsEndpoint, false, LongviewSubscription{}, LongviewSubscriptionsPagedResponse{}),
-		managedName:                  NewResource(client, managedName, managedEndpoint, false, nil, nil), // really?
-		mysqlName:                    NewResource(client, mysqlName, mysqlEndpoint, false, Database{}, nil),
-		nodebalancerconfigsName:      NewResource(client, nodebalancerconfigsName, nodebalancerconfigsEndpoint, true, NodeBalancerConfig{}, NodeBalancerConfigsPagedResponse{}),
-		nodebalancernodesName:        NewResource(client, nodebalancernodesName, nodebalancernodesEndpoint, true, NodeBalancerNode{}, NodeBalancerNodesPagedResponse{}),
-		nodebalancerStatsName:        NewResource(client, nodebalancerStatsName, nodebalancerStatsEndpoint, true, NodeBalancerStats{}, nil),
-		nodebalancersName:            NewResource(client, nodebalancersName, nodebalancersEndpoint, false, NodeBalancer{}, NodeBalancerConfigsPagedResponse{}),
-		notificationsName:            NewResource(client, notificationsName, notificationsEndpoint, false, Notification{}, NotificationsPagedResponse{}),
-		oauthClientsName:             NewResource(client, oauthClientsName, oauthClientsEndpoint, false, OAuthClient{}, OAuthClientsPagedResponse{}),
-		objectStorageBucketsName:     NewResource(client, objectStorageBucketsName, objectStorageBucketsEndpoint, false, ObjectStorageBucket{}, ObjectStorageBucketsPagedResponse{}),
-		objectStorageBucketCertsName: NewResource(client, objectStorageBucketCertsName, objectStorageBucketCertsEndpoint, true, ObjectStorageBucketCert{}, nil),
-		objectStorageClustersName:    NewResource(client, objectStorageClustersName, objectStorageClustersEndpoint, false, ObjectStorageCluster{}, ObjectStorageClustersPagedResponse{}),
-		objectStorageKeysName:        NewResource(client, objectStorageKeysName, objectStorageKeysEndpoint, false, ObjectStorageKey{}, ObjectStorageKeysPagedResponse{}),
-		paymentsName:                 NewResource(client, paymentsName, paymentsEndpoint, false, Payment{}, PaymentsPagedResponse{}),
-		profileName:                  NewResource(client, profileName, profileEndpoint, false, nil, nil), // really?
-		regionsName:                  NewResource(client, regionsName, regionsEndpoint, false, Region{}, RegionsPagedResponse{}),
-		sshkeysName:                  NewResource(client, sshkeysName, sshkeysEndpoint, false, SSHKey{}, SSHKeysPagedResponse{}),
-		stackscriptsName:             NewResource(client, stackscriptsName, stackscriptsEndpoint, false, Stackscript{}, StackscriptsPagedResponse{}),
-		tagsName:                     NewResource(client, tagsName, tagsEndpoint, false, Tag{}, TagsPagedResponse{}),
-		ticketsName:                  NewResource(client, ticketsName, ticketsEndpoint, false, Ticket{}, TicketsPagedResponse{}),
-		tokensName:                   NewResource(client, tokensName, tokensEndpoint, false, Token{}, TokensPagedResponse{}),
-		typesName:                    NewResource(client, typesName, typesEndpoint, false, LinodeType{}, LinodeTypesPagedResponse{}),
-		userGrantsName:               NewResource(client, typesName, userGrantsEndpoint, true, UserGrants{}, nil),
-		usersName:                    NewResource(client, usersName, usersEndpoint, false, User{}, UsersPagedResponse{}),
-		vlansName:                    NewResource(client, vlansName, vlansEndpoint, false, VLAN{}, VLANsPagedResponse{}),
-		volumesName:                  NewResource(client, volumesName, volumesEndpoint, false, Volume{}, VolumesPagedResponse{}),
+// NewClientFromEnv creates a Client and initializes it with values
+// from the LINODE_CONFIG file and the LINODE_TOKEN environment variable.
+func NewClientFromEnv(hc *http.Client) (*Client, error) {
+	client := NewClient(hc)
+
+	// Users are expected to chain NewClient(...) and LoadConfig(...) to customize these options
+	configPath, err := resolveValidConfigPath()
+	if err != nil {
+		return nil, err
 	}
 
-	client.resources = resources
+	// Populate the token from the environment.
+	// Tokens should be first priority to maintain backwards compatibility
+	if token, ok := os.LookupEnv(APIEnvVar); ok && token != "" {
+		client.SetToken(token)
+		return &client, nil
+	}
 
-	client.Account = resources[accountName]
-	client.Databases = resources[databasesName]
-	client.DomainRecords = resources[domainRecordsName]
-	client.Domains = resources[domainsName]
-	client.Events = resources[eventsName]
-	client.Firewalls = resources[firewallsName]
-	client.FirewallDevices = resources[firewallDevicesName]
-	client.FirewallRules = resources[firewallRulesName]
-	client.IPAddresses = resources[ipaddressesName]
-	client.IPv6Pools = resources[ipv6poolsName]
-	client.IPv6Ranges = resources[ipv6rangesName]
-	client.Images = resources[imagesName]
-	client.InstanceConfigs = resources[instanceConfigsName]
-	client.InstanceDisks = resources[instanceDisksName]
-	client.InstanceIPs = resources[instanceIPsName]
-	client.InstanceSnapshots = resources[instanceSnapshotsName]
-	client.InstanceStats = resources[instanceStatsName]
-	client.InstanceVolumes = resources[instanceVolumesName]
-	client.Instances = resources[instancesName]
-	client.Invoices = resources[invoicesName]
-	client.Kernels = resources[kernelsName]
-	client.LKEClusterAPIEndpoints = resources[lkeClusterAPIEndpointsName]
-	client.LKEClusters = resources[lkeClustersName]
-	client.LKEClusterPools = resources[lkeClusterPoolsName]
-	client.LKENodePools = resources[lkeNodePoolsName]
-	client.LKEVersions = resources[lkeVersionsName]
-	client.Longview = resources[longviewName]
-	client.LongviewSubscriptions = resources[longviewsubscriptionsName]
-	client.Managed = resources[managedName]
-	client.DatabaseMySQLInstances = resources[mysqlName]
-	client.NodeBalancerConfigs = resources[nodebalancerconfigsName]
-	client.NodeBalancerNodes = resources[nodebalancernodesName]
-	client.NodeBalancerStats = resources[nodebalancerStatsName]
-	client.NodeBalancers = resources[nodebalancersName]
-	client.Notifications = resources[notificationsName]
-	client.OAuthClients = resources[oauthClientsName]
-	client.ObjectStorageBuckets = resources[objectStorageBucketsName]
-	client.ObjectStorageBucketCerts = resources[objectStorageBucketCertsName]
-	client.ObjectStorageClusters = resources[objectStorageClustersName]
-	client.ObjectStorageKeys = resources[objectStorageKeysName]
-	client.Payments = resources[paymentsName]
-	client.Profile = resources[profileName]
-	client.Regions = resources[regionsName]
-	client.SSHKeys = resources[sshkeysName]
-	client.StackScripts = resources[stackscriptsName]
-	client.Tags = resources[tagsName]
-	client.Tickets = resources[ticketsName]
-	client.Tokens = resources[tokensName]
-	client.Types = resources[typesName]
-	client.UserGrants = resources[userGrantsName]
-	client.Users = resources[usersName]
-	client.VLANs = resources[vlansName]
-	client.Volumes = resources[volumesName]
+	if p, ok := os.LookupEnv(APIConfigEnvVar); ok {
+		configPath = p
+	} else if !ok && configPath == "" {
+		return nil, fmt.Errorf("no linode config file or token found")
+	}
+
+	configProfile := DefaultConfigProfile
+
+	if p, ok := os.LookupEnv(APIConfigProfileEnvVar); ok {
+		configProfile = p
+	}
+
+	client.selectedProfile = configProfile
+
+	// We should only load the config if the config file exists
+	if _, err := os.Stat(configPath); err != nil {
+		return nil, fmt.Errorf("error loading config file %s: %w", configPath, err)
+	}
+
+	err = client.preLoadConfig(configPath)
+	return &client, err
+}
+
+func (c *Client) preLoadConfig(configPath string) error {
+	if envDebug {
+		log.Printf("[INFO] Loading profile from %s\n", configPath)
+	}
+
+	if err := c.LoadConfig(&LoadConfigOptions{
+		Path:            configPath,
+		SkipLoadProfile: true,
+	}); err != nil {
+		return err
+	}
+
+	// We don't want to load the profile until the user is actually making requests
+	c.OnBeforeRequest(func(request *Request) error {
+		if c.loadedProfile != c.selectedProfile {
+			if err := c.UseProfile(c.selectedProfile); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	return nil
 }
 
 func copyBool(bPtr *bool) *bool {
@@ -474,4 +524,17 @@ func copyTime(tPtr *time.Time) *time.Time {
 	t := *tPtr
 
 	return &t
+}
+
+func generateListCacheURL(endpoint string, opts *ListOptions) (string, error) {
+	if opts == nil {
+		return endpoint, nil
+	}
+
+	hashedOpts, err := opts.Hash()
+	if err != nil {
+		return endpoint, err
+	}
+
+	return fmt.Sprintf("%s:%s", endpoint, hashedOpts), nil
 }
