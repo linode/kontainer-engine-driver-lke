@@ -24,4 +24,4 @@ jobs:
         env:
           LINODE_TOKEN: ${{ secrets.DX_LINODE_TOKEN }}
         run: |
-          make
+          make test
