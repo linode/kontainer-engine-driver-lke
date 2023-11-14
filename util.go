@@ -7,11 +7,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"time"
 )
 
 const (
@@ -93,6 +96,7 @@ func generateServiceAccountToken(clientset kubernetes.Interface) (string, error)
 		return "", fmt.Errorf("error getting service account: %v", err)
 	}
 
+	// Create a service account token secret
 	secret := v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: serviceAccountSecretName,
@@ -103,12 +107,12 @@ func generateServiceAccountToken(clientset kubernetes.Interface) (string, error)
 		Type: v1.SecretTypeServiceAccountToken,
 	}
 
-	secretObj, err := clientset.CoreV1().Secrets(cattleNamespace).Create(
+	_, err = clientset.CoreV1().Secrets(cattleNamespace).Create(
 		context.TODO(),
 		&secret,
 		metav1.CreateOptions{},
 	)
-	if err != nil {
+	if err != nil && !errors.IsAlreadyExists(err) {
 		return "", fmt.Errorf(
 			"failed to create secret for service account %s: %w",
 			serviceAccount.Name,
@@ -116,10 +120,33 @@ func generateServiceAccountToken(clientset kubernetes.Interface) (string, error)
 		)
 	}
 
-	token, ok := secretObj.Data["token"]
-	if !ok {
-		return "", fmt.Errorf("failed to get token from generated secret")
-	}
+	return waitForServiceAccountSecretPopulated(clientset)
+}
 
-	return string(token), nil
+// waitForServiceAccountSecretPopulated waits for the cattle service account
+// token to be populated.
+func waitForServiceAccountSecretPopulated(clientset kubernetes.Interface) (string, error) {
+	var result string
+
+	err := wait.PollImmediate(time.Millisecond*500, time.Second*15, func() (done bool, err error) {
+		refreshedSecret, err := clientset.CoreV1().Secrets(cattleNamespace).Get(
+			context.TODO(),
+			serviceAccountSecretName,
+			metav1.GetOptions{},
+		)
+		if err != nil {
+			return false, fmt.Errorf("failed to refresh secret: %w", err)
+		}
+
+		token, ok := refreshedSecret.Data["token"]
+		if !ok {
+			logrus.Debugf("token is not yet available, retrying")
+			return false, nil
+		}
+
+		result = string(token)
+		return true, nil
+	})
+
+	return result, err
 }
