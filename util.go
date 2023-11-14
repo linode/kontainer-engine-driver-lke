@@ -22,7 +22,7 @@ const (
 	clusterAdmin              = "cluster-admin"
 	kontainerEngine           = "kontainer-engine"
 	newClusterRoleBindingName = "system-netes-default-clusterRoleBinding"
-	serviceAccountSecretName  = "cattle-secret"
+	serviceAccountSecretName  = "kontainer-engine-secret"
 )
 
 func generateServiceAccountToken(clientset kubernetes.Interface) (string, error) {
@@ -92,16 +92,12 @@ func generateServiceAccountToken(clientset kubernetes.Interface) (string, error)
 		return "", fmt.Errorf("error creating role bindings: %v", err)
 	}
 
-	if serviceAccount, err = clientset.CoreV1().ServiceAccounts(cattleNamespace).Get(context.TODO(), serviceAccount.Name, metav1.GetOptions{}); err != nil {
-		return "", fmt.Errorf("error getting service account: %v", err)
-	}
-
 	// Create a service account token secret
 	secret := v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: serviceAccountSecretName,
 			Annotations: map[string]string{
-				"kubernetes.io/service-account.name": serviceAccount.Name,
+				"kubernetes.io/service-account.name": kontainerEngine,
 			},
 		},
 		Type: v1.SecretTypeServiceAccountToken,
