@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"time"
 )
 
 const (
@@ -20,6 +19,7 @@ const (
 	clusterAdmin              = "cluster-admin"
 	kontainerEngine           = "kontainer-engine"
 	newClusterRoleBindingName = "system-netes-default-clusterRoleBinding"
+	serviceAccountSecretName  = "cattle-secret"
 )
 
 func generateServiceAccountToken(clientset kubernetes.Interface) (string, error) {
@@ -89,25 +89,37 @@ func generateServiceAccountToken(clientset kubernetes.Interface) (string, error)
 		return "", fmt.Errorf("error creating role bindings: %v", err)
 	}
 
-	start := time.Millisecond * 250
-	for i := 0; i < 5; i++ {
-		time.Sleep(start)
-		if serviceAccount, err = clientset.CoreV1().ServiceAccounts(cattleNamespace).Get(context.TODO(), serviceAccount.Name, metav1.GetOptions{}); err != nil {
-			return "", fmt.Errorf("error getting service account: %v", err)
-		}
-
-		if len(serviceAccount.Secrets) > 0 {
-			secret := serviceAccount.Secrets[0]
-			secretObj, err := clientset.CoreV1().Secrets(cattleNamespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
-			if err != nil {
-				return "", fmt.Errorf("error getting secret: %v", err)
-			}
-			if token, ok := secretObj.Data["token"]; ok {
-				return string(token), nil
-			}
-		}
-		start = start * 2
+	if serviceAccount, err = clientset.CoreV1().ServiceAccounts(cattleNamespace).Get(context.TODO(), serviceAccount.Name, metav1.GetOptions{}); err != nil {
+		return "", fmt.Errorf("error getting service account: %v", err)
 	}
 
-	return "", fmt.Errorf("failed to fetch serviceAccountToken")
+	secret := v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: serviceAccountSecretName,
+			Annotations: map[string]string{
+				"kubernetes.io/service-account.name": serviceAccount.Name,
+			},
+		},
+		Type: v1.SecretTypeServiceAccountToken,
+	}
+
+	secretObj, err := clientset.CoreV1().Secrets(cattleNamespace).Create(
+		context.TODO(),
+		&secret,
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return "", fmt.Errorf(
+			"failed to create secret for service account %s: %w",
+			serviceAccount.Name,
+			err,
+		)
+	}
+
+	token, ok := secretObj.Data["token"]
+	if !ok {
+		return "", fmt.Errorf("failed to get token from generated secret")
+	}
+
+	return string(token), nil
 }
