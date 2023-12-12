@@ -23,9 +23,11 @@ import (
 )
 
 // DefaultLinodeURL is the Linode APIv4 URL to use
-const DefaultLinodeURL = "https://api.linode.com"
-const retryInterval = 5 * time.Second
-const serviceAccountRetryTimeout = 5 * time.Minute
+const (
+	DefaultLinodeURL           = "https://api.linode.com"
+	retryInterval              = 5 * time.Second
+	serviceAccountRetryTimeout = 5 * time.Minute
+)
 
 // Driver defines the struct of lke driver
 type Driver struct {
@@ -182,9 +184,7 @@ func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 	tags := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "tags")
 	if tags != nil {
 		tags := tags.(*types.StringSlice)
-		for _, tag := range tags.Value {
-			d.Tags = append(d.Tags, tag)
-		}
+		d.Tags = append(d.Tags, tags.Value...)
 	}
 
 	pools := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "node-pools", "nodePools")
@@ -404,7 +404,8 @@ func (d *Driver) generateClusterCreateRequest(state state) raw.LKEClusterCreateO
 	// We should only consider HA if it's defined
 	if state.HighAvailability != nil {
 		req.ControlPlane = &raw.LKEClusterControlPlane{
-			HighAvailability: *state.HighAvailability}
+			HighAvailability: *state.HighAvailability,
+		}
 	}
 
 	for t, count := range state.NodePools {
@@ -655,6 +656,14 @@ func (d *Driver) SetClusterSize(ctx context.Context, info *types.ClusterInfo, co
 	_, err = client.UpdateLKENodePool(ctx, clusterID, poolID, raw.LKENodePoolUpdateOptions{
 		Count: int(count.Count),
 	})
+	if err != nil {
+		return fmt.Errorf(
+			"failed to update LKE Cluster %d Node Pool %d: %w",
+			clusterID,
+			poolID,
+			err,
+		)
+	}
 
 	if poolNodeCount < int(count.Count) {
 		err = waitUntilPoolReady(ctx, client, clusterID, poolID)
