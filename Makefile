@@ -1,6 +1,7 @@
 TEST_TIMEOUT := 25m
 
 DOCKER_TAG ?= dev
+SKIP_DOCKER ?= 0
 
 GOLANGCILINT      := golangci-lint
 GOLANGCILINT_IMG  := golangci/golangci-lint:v1.55
@@ -17,7 +18,12 @@ docker-build:
 
 lint:
 	go vet ./...
+
+ifeq ($(SKIP_DOCKER), 1)
+	$(GOLANGCILINT) $(GOLANGCILINT_ARGS)
+else
 	docker run --rm -v $(shell pwd):/app -w /app $(GOLANGCILINT_IMG) $(GOLANGCILINT) $(GOLANGCILINT_ARGS)
+endif
 
 fmt:
 	gofumpt -l -w .
