@@ -36,7 +36,7 @@ func TestDriver(t *testing.T) {
 			"name":               name,
 			"label":              name,
 			"access-token":       token,
-			"region":             "us-west",
+			"region":             "us-ord",
 			"kubernetes-version": kubernetesVersion,
 		},
 		StringSliceOptions: map[string]*types.StringSlice{
@@ -90,7 +90,7 @@ func TestDriver(t *testing.T) {
 			"name":               name,
 			"label":              name,
 			"access-token":       token,
-			"region":             "us-west",
+			"region":             "us-ord",
 			"kubernetes-version": kubernetesVersion,
 		},
 		StringSliceOptions: map[string]*types.StringSlice{
@@ -142,7 +142,7 @@ func TestDriver_HighAvailability(t *testing.T) {
 			"name":               name,
 			"label":              name,
 			"access-token":       token,
-			"region":             "us-west",
+			"region":             "us-ord",
 			"kubernetes-version": kubernetesVersion,
 		},
 		StringSliceOptions: map[string]*types.StringSlice{
@@ -213,7 +213,7 @@ func TestDriver_HighAvailabilityUpgrade(t *testing.T) {
 			"name":               name,
 			"label":              name,
 			"access-token":       token,
-			"region":             "us-west",
+			"region":             "us-ord",
 			"kubernetes-version": kubernetesVersion,
 		},
 		StringSliceOptions: map[string]*types.StringSlice{
@@ -258,7 +258,7 @@ func TestDriver_HighAvailabilityUpgrade(t *testing.T) {
 			"name":               name,
 			"label":              name,
 			"access-token":       token,
-			"region":             "us-west",
+			"region":             "us-ord",
 			"kubernetes-version": kubernetesVersion,
 		},
 		StringSliceOptions: map[string]*types.StringSlice{
@@ -284,7 +284,7 @@ func TestDriver_HighAvailabilityUpgrade(t *testing.T) {
 			"name":               name,
 			"label":              name,
 			"access-token":       token,
-			"region":             "us-west",
+			"region":             "us-ord",
 			"kubernetes-version": kubernetesVersion,
 		},
 		StringSliceOptions: map[string]*types.StringSlice{
