@@ -1,0 +1,8 @@
+run:
+  tests: false
+  timeout: 10m
+
+linters:
+  fast: false
+  enable:
+    - gofumpt

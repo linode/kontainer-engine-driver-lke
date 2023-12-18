@@ -18,10 +18,13 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
 
+      - name: Lint
+        run: make lint
+
       - name: Package
         env:
-          LINODE_TOKEN: ${{ secrets.LINODE_TOKEN }}
-        run: make
+          LINODE_TOKEN: ${{ secrets.DX_LINODE_TOKEN }}
+        run: make build-ci
 
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
@@ -32,6 +35,7 @@ jobs:
           asset_path: ./bin/kontainer-engine-driver-lke-darwin-amd64
           asset_name: kontainer-engine-driver-lke-darwin-amd64
           asset_content_type: application/octet-stream
+
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
         env:
@@ -41,6 +45,7 @@ jobs:
           asset_path: ./bin/kontainer-engine-driver-lke-linux-amd64
           asset_name: kontainer-engine-driver-lke-linux-amd64
           asset_content_type: application/octet-stream
+
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
         env:

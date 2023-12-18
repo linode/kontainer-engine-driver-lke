@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	raw "github.com/linode/linodego"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+
+	raw "github.com/linode/linodego"
 
 	"github.com/google/uuid"
 	"github.com/rancher/kontainer-engine/types"
