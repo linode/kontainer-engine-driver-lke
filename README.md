@@ -45,6 +45,13 @@ make test
 ```
 
 ## License
+
+Copyright 2024 Akamai Technologies, Inc.
+
+This software is based on Kontainer Engine Example Driver from Rancher Labs, Inc.  Akamai modified those files.
+
+The following is the copyright notice for Kontainer Engine Example Driver:
+
 Copyright (c) 2018 [Rancher Labs, Inc.](http://rancher.com)
 
 Licensed under the Apache License, Version 2.0 (the "License");
