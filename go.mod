@@ -1,15 +1,17 @@
 module github.com/linode/kontainer-engine-driver-lke
 
-go 1.18
+go 1.21
+
+toolchain go1.23.1
 
 require (
-	github.com/google/uuid v1.1.1
+	github.com/google/uuid v1.6.0
 	github.com/linode/linodego v1.19.0
 	github.com/linode/linodego/k8s v0.0.0-20230628150657-a889f87e7482
 	github.com/rancher/kontainer-engine v0.0.4-dev.0.20210625182816-1a4f4e73a324
 	github.com/sirupsen/logrus v1.4.2
-	github.com/stretchr/testify v1.7.1
-	golang.org/x/oauth2 v0.10.0
+	github.com/stretchr/testify v1.9.0
+	golang.org/x/oauth2 v0.22.0
 	k8s.io/api v0.23.4
 	k8s.io/apimachinery v0.23.4
 	k8s.io/client-go v12.0.0+incompatible
@@ -19,7 +21,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-resty/resty/v2 v2.7.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/imdario/mergo v0.3.7 // indirect
@@ -30,15 +32,15 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rancher/rke v1.2.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/net v0.23.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
-	golang.org/x/term v0.18.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
-	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20191115194625-c23dd37a84c9 // indirect
-	google.golang.org/grpc v1.26.0 // indirect
+	golang.org/x/crypto v0.26.0 // indirect
+	golang.org/x/net v0.28.0 // indirect
+	golang.org/x/sys v0.24.0 // indirect
+	golang.org/x/term v0.23.0 // indirect
+	golang.org/x/text v0.17.0 // indirect
+	golang.org/x/time v0.6.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240827150818-7e3bb234dfed // indirect
+	google.golang.org/grpc v1.66.0 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.66.6 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
@@ -97,9 +99,9 @@ replace go.etcd.io/etcd => go.etcd.io/etcd v0.0.0-20191023171146-3cf2f69b5738
 
 replace google.golang.org/api => google.golang.org/api v0.14.0
 
-replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20191115194625-c23dd37a84c9
+replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1
 
-replace google.golang.org/grpc => google.golang.org/grpc v1.26.0
+replace google.golang.org/grpc => google.golang.org/grpc v1.67.0
 
 replace k8s.io/api => k8s.io/api v0.18.9
 
