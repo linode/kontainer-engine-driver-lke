@@ -23,6 +23,7 @@ jobs:
 
       - name: Package
         env:
+          CGO_ENABLED: 1
           LINODE_TOKEN: ${{ secrets.DX_LINODE_TOKEN }}
         run: make build-ci
 
