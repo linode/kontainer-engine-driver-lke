@@ -6,25 +6,35 @@ source $(dirname $0)/version
 cd $(dirname $0)/..
 
 mkdir -p bin
-[ "$(uname)" != "Darwin" ] && LINKFLAGS="-linkmode external -extldflags -static -s"
 
-# Always use static linking
-export CGO_ENABLED=1
+# Default to no CGO
+export CGO_ENABLED=0
 
-go build -ldflags "-X main.VERSION=$VERSION $LINKFLAGS" -o bin/kontainer-engine-driver-lke
-echo built default
-for i in darwin linux
-do
+# Build default binary
+go build -ldflags "-X main.VERSION=$VERSION" -o bin/kontainer-engine-driver-lke
+echo "built default"
+
+for i in darwin linux; do
     if [ $i == "linux" ]; then
-        for arch in amd64 arm64
-        do
+        for arch in amd64 arm64; do
             export GOOS=$i GOARCH=$arch
-            go build -o bin/kontainer-engine-driver-lke-$i-$arch
-            echo built $i-$arch
+
+            # Enable CGO for Linux AMD64 with static linking
+            if [ "$GOARCH" == "amd64" ]; then
+                export CGO_ENABLED=1
+                LINKFLAGS="-linkmode external -extldflags -static -s"
+            else
+                export CGO_ENABLED=0
+                LINKFLAGS=""
+            fi
+
+            go build -ldflags "$LINKFLAGS" -o bin/kontainer-engine-driver-lke-$i-$arch
+            echo "built $i-$arch"
         done
     else
         export GOOS=$i GOARCH="amd64"
+        export CGO_ENABLED=0
         go build -o bin/kontainer-engine-driver-lke-$i-amd64
-        echo built $i
+        echo "built $i"
     fi
 done
