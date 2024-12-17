@@ -9,7 +9,7 @@ mkdir -p bin
 [ "$(uname)" != "Darwin" ] && LINKFLAGS="-linkmode external -extldflags -static -s"
 
 # Always use static linking
-export CGO_ENABLED=0
+export CGO_ENABLED=1
 
 go build -ldflags "-X main.VERSION=$VERSION $LINKFLAGS" -o bin/kontainer-engine-driver-lke
 echo built default
