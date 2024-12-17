@@ -11,7 +11,7 @@ test:
 	go test $(TEST_ARGS) -timeout $(TEST_TIMEOUT)
 
 build:
-	CGO_ENABLED=0 go build -o kontainer-engine-driver-lke
+	CGO_ENABLED=1 go build -o kontainer-engine-driver-lke
 
 docker-build:
 	docker build -t linode/kontainer-engine-driver-lke:$(DOCKER_TAG) -f package/Dockerfile .
