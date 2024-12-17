@@ -22,7 +22,7 @@ jobs:
         run: make lint
       
       - name: Install GCC
-        run: sudo apt-get install -y gcc
+        run: sudo apt install gcc-aarch64-linux-gnu
 
       - name: Package
         env:
