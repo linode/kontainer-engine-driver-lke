@@ -20,10 +20,12 @@ jobs:
 
       - name: Lint
         run: make lint
+      
+      - name: Install GCC
+        run: sudo apt install gcc-aarch64-linux-gnu
 
       - name: Package
         env:
-          CGO_ENABLED: 1
           LINODE_TOKEN: ${{ secrets.DX_LINODE_TOKEN }}
         run: make build-ci
 
