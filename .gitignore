@@ -4,3 +4,4 @@
 /.idea
 /kontainer-engine-driver-linode
 /kontainer-engine-driver-lke
+.DS_Store
