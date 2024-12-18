@@ -20,9 +20,6 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
 
-      - name: Lint
-        run: make lint
-
       - name: Run checks
         env:
           LINODE_TOKEN: ${{ secrets.DX_LINODE_TOKEN }}
