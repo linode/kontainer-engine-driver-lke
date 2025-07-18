@@ -11,7 +11,7 @@ require (
 	github.com/rancher/kontainer-engine v0.0.4-dev.0.20210625182816-1a4f4e73a324
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/oauth2 v0.22.0
+	golang.org/x/oauth2 v0.27.0
 	k8s.io/api v0.23.4
 	k8s.io/apimachinery v0.23.4
 	k8s.io/client-go v12.0.0+incompatible
