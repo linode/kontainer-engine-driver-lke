@@ -2,8 +2,6 @@ module github.com/linode/kontainer-engine-driver-lke
 
 go 1.23.0
 
-toolchain go1.23.1
-
 require (
 	github.com/google/uuid v1.6.0
 	github.com/linode/linodego v1.19.0
@@ -81,7 +79,7 @@ replace github.com/Azure/go-autorest/logger => github.com/Azure/go-autorest/logg
 
 replace github.com/Azure/go-autorest/tracing => github.com/Azure/go-autorest/tracing v0.5.0
 
-replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.1
+replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 
 replace github.com/golang/protobuf => github.com/golang/protobuf v1.3.2
 
@@ -103,17 +101,17 @@ replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20240903
 
 replace google.golang.org/grpc => google.golang.org/grpc v1.67.0
 
-replace k8s.io/api => k8s.io/api v0.18.9
+replace k8s.io/api => k8s.io/api v0.18.14
 
-replace k8s.io/apimachinery => k8s.io/apimachinery v0.18.9
+replace k8s.io/apimachinery => k8s.io/apimachinery v0.18.14
 
-replace k8s.io/apiserver => k8s.io/apiserver v0.18.9
+replace k8s.io/apiserver => k8s.io/apiserver v0.18.14
 
-replace k8s.io/cli-runtime => k8s.io/cli-runtime v0.18.9
+replace k8s.io/cli-runtime => k8s.io/cli-runtime v0.18.14
 
-replace k8s.io/client-go => k8s.io/client-go v0.18.9
+replace k8s.io/client-go => k8s.io/client-go v0.18.14
 
-replace k8s.io/component-base => k8s.io/component-base v0.18.9
+replace k8s.io/component-base => k8s.io/component-base v0.18.14
 
 replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20200410145947-61e04a5be9a6
 
