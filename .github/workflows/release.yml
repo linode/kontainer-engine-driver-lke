@@ -2,7 +2,7 @@ name: Release
 
 on:
   release:
-    types: [created, edited]
+    types: [created, edited, published]
 
 jobs:
   build:
@@ -20,7 +20,7 @@ jobs:
 
       - name: Lint
         run: make lint
-      
+
       - name: Install GCC
         run: sudo apt install gcc-aarch64-linux-gnu
 
