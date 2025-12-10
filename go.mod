@@ -7,7 +7,7 @@ require (
 	github.com/linode/linodego v1.19.0
 	github.com/linode/linodego/k8s v0.0.0-20230628150657-a889f87e7482
 	github.com/rancher/kontainer-engine v0.0.4-dev.0.20210625182816-1a4f4e73a324
-	github.com/sirupsen/logrus v1.4.2
+	github.com/sirupsen/logrus v1.8.3
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/oauth2 v0.27.0
 	k8s.io/api v0.23.4
@@ -24,7 +24,6 @@ require (
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/imdario/mergo v0.3.7 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
