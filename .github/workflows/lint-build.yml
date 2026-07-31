@@ -19,9 +19,14 @@ jobs:
 
       - name: Check out code into the Go module directory
         uses: actions/checkout@v7
-      
+
       - name: Lint
-        run: make lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+
+      - name: Vet
+        run: go vet ./...
 
       - name: Attempt build
         run: make build
