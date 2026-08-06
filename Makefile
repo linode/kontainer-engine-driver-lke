@@ -4,7 +4,7 @@ DOCKER_TAG ?= dev
 SKIP_DOCKER ?= 0
 
 GOLANGCILINT      := golangci-lint
-GOLANGCILINT_IMG  := golangci/golangci-lint:v1.64.7
+GOLANGCILINT_IMG  := golangci/golangci-lint:latest
 GOLANGCILINT_ARGS := run
 
 test:
