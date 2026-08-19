@@ -22,7 +22,7 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       inputs.sha != ''
     steps:
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: 'stable'
 
@@ -41,10 +41,11 @@ jobs:
         with:
           ref: ${{ inputs.sha }}
 
-      - run: make TEST_ARGS="-run ${{ inputs.tests }}" test
+      - run: make TEST_ARGS="-run $TESTS" test
         if: ${{ inputs.tests != '' && steps.validate-tests.outputs.match == '' }}
         env:
           LINODE_TOKEN: ${{ secrets.DX_LINODE_TOKEN }}
+          TESTS: ${{ inputs.tests }}
 
       - run: make test
         if: ${{ inputs.tests == '' }}
