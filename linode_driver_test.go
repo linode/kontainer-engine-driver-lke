@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	raw "github.com/linode/linodego"
+	raw "github.com/linode/linodego/v2"
 
 	"github.com/google/uuid"
 	"github.com/rancher/kontainer-engine/types"

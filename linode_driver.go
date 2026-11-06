@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	raw "github.com/linode/linodego"
 	"github.com/linode/linodego/k8s"
 	k8scondition "github.com/linode/linodego/k8s/pkg/condition"
+	raw "github.com/linode/linodego/v2"
 	"github.com/rancher/kontainer-engine/drivers/options"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/sirupsen/logrus"
@@ -245,9 +246,10 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 	}
 	info.Metadata["cluster-id"] = strconv.Itoa(cluster.ID)
 
-	err = client.WaitForLKEClusterConditions(ctx, cluster.ID, raw.LKEClusterPollOptions{
-		Retry:          true,
-		TimeoutSeconds: 20 * 60,
+	waitCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+	defer cancel()
+	err = client.WaitForLKEClusterConditions(waitCtx, cluster.ID, raw.LKEClusterPollOptions{
+		Retry: true,
 	}, k8scondition.ClusterHasReadyNode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to wait for lke cluster ready node: %s", err)
@@ -314,15 +316,15 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 	}
 
 	if !sets.NewString(state.Tags...).Equal(sets.NewString(newState.Tags...)) {
-		updateOpts.Tags = &newState.Tags
+		updateOpts.Tags = newState.Tags
 		state.Tags = newState.Tags
 		shouldUpdate = true
 	}
 
 	// We should only update HA under certain conditions
 	if newStateHAOk && (!stateHAOk || *state.HighAvailability != *newState.HighAvailability) {
-		updateOpts.ControlPlane = &raw.LKEClusterControlPlane{
-			HighAvailability: *newState.HighAvailability,
+		updateOpts.ControlPlane = &raw.LKEClusterControlPlaneOptions{
+			HighAvailability: newState.HighAvailability,
 		}
 		shouldUpdate = true
 	}
@@ -403,8 +405,8 @@ func (d *Driver) generateClusterCreateRequest(state state) raw.LKEClusterCreateO
 
 	// We should only consider HA if it's defined
 	if state.HighAvailability != nil {
-		req.ControlPlane = &raw.LKEClusterControlPlane{
-			HighAvailability: *state.HighAvailability,
+		req.ControlPlane = &raw.LKEClusterControlPlaneOptions{
+			HighAvailability: state.HighAvailability,
 		}
 	}
 
@@ -447,9 +449,10 @@ func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types
 			return nil, fmt.Errorf("failed to parse cluster id: %s", err)
 		}
 
-		err = client.WaitForLKEClusterConditions(ctx, clusterID, raw.LKEClusterPollOptions{
-			Retry:          true,
-			TimeoutSeconds: 20 * 60,
+		waitCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+		defer cancel()
+		err = client.WaitForLKEClusterConditions(waitCtx, clusterID, raw.LKEClusterPollOptions{
+			Retry: true,
 		}, k8scondition.ClusterHasReadyNode)
 		if err != nil {
 			return nil, fmt.Errorf("failed to wait for lke cluster ready node: %s", err)
@@ -524,9 +527,12 @@ func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete Linode LKE cluster %d: %s", clusterID, err)
 	}
-	_, err = client.WaitForLKEClusterStatus(ctx, clusterID, "not_ready", 10*60)
+	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	_, err = client.WaitForLKEClusterStatus(waitCtx, clusterID, raw.LKEClusterNotReady)
 	if err != nil {
-		if le, ok := err.(*raw.Error); ok && le.Code == http.StatusNotFound {
+		var le *raw.Error
+		if errors.As(err, &le) && le.Code == http.StatusNotFound {
 			return nil
 		}
 		return err
@@ -544,7 +550,10 @@ func (d *Driver) getServiceClient(ctx context.Context, token string) (*raw.Clien
 	oauth2Client := &http.Client{
 		Transport: oauthTransport,
 	}
-	client := raw.NewClient(oauth2Client)
+	client, err := raw.NewClient(oauth2Client)
+	if err != nil {
+		return nil, err
+	}
 
 	client.SetUserAgent("kontainer-engine-driver-lke")
 	client.SetBaseURL(DefaultLinodeURL)
