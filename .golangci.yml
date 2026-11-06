@@ -1,9 +1,7 @@
 version: "2"
-
 run:
   tests: false
   timeout: 10m
-
 linters:
   exclusions:
     generated: lax
@@ -16,7 +14,6 @@ linters:
       - third_party$
       - builtin$
       - examples$
-
 formatters:
   enable:
     - gofumpt

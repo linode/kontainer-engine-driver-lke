@@ -18,8 +18,10 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v7
 
-      - name: Lint
-        run: make lint
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
 
       - name: Install GCC
         run: sudo apt install gcc-aarch64-linux-gnu
